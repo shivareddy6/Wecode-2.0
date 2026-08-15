@@ -1,6 +1,6 @@
 # WeCode v2 — Database Schema
 
-This documents `supabase/migrations/20260815084024_v2_schema.sql` in prose. That migration file is the source of truth — this doc explains the *why* behind its shape and should be updated alongside it, not instead of it. It replaces the v1 prototype's `public.users`/`public.user_secrets` schema entirely (both were confirmed empty — 0 rows — before the switch, so nothing was migrated or lost).
+This documents the schema in `supabase/migrations/` in prose. Those migration files are the source of truth — this doc explains the *why* behind their shape and should be updated alongside them, not instead of them.
 
 ## Tables
 
@@ -31,16 +31,11 @@ Two layers, matching the DAL discussion in `ARCHITECTURE.md`:
 
 One structural note: several policies reference two small `SECURITY DEFINER` helper functions, `is_room_member(room_id)` and `is_room_host(room_id)`, instead of inlining a subquery directly against `room_participants` or `rooms`. This isn't a bypass of the authorization model — it's a standard Postgres RLS pattern to avoid a policy on a table recursively triggering RLS evaluation against that same table while checking itself. Every other room-scoped table's policies are built on these same two functions, so there's exactly one place membership/host logic is defined, not one per table.
 
+Two things worth knowing if you add another `SECURITY DEFINER` function to this schema: pin its `search_path` explicitly (an unset one lets a role with schema-creation rights shadow an unqualified object name), and grant `EXECUTE` explicitly to `authenticated` rather than relying on the default — Postgres grants `EXECUTE` to `PUBLIC` at creation time by default, which `anon` inherits regardless of anything revoked from `anon` specifically; the only way to actually exclude `anon` is to revoke from `PUBLIC` and grant back to the roles that need it.
+
 ## The leaderboard: a function, not a table
 
 There's deliberately no `leaderboard_scores` table. `compute_leaderboard(session_id)` computes the ranking on demand from `submissions` + `session_problems` + `scoring_config`, so "how the leaderboard is computed" and "what it currently shows" can never drift apart the way a separately-maintained scores table could. The Epic 11 socket server calls this function and broadcasts the result after every scoring-relevant write, per the coordinated write-then-broadcast requirement in that epic.
-
-## Hardening notes, post-migration
-
-Running Supabase's security advisor after the initial migration caught two real issues, both fixed in follow-up migrations (`v2_schema_cleanup.sql`, `v2_schema_hardening.sql`, `v2_schema_fix_function_grants.sql`):
-
-- **A live v1 trigger would have broken every future signup.** `on_auth_user_created` on `auth.users` still called the old `handle_new_user()`, which inserted into `public.users` using the v1 shape (`email`, no `leetcode_id`). Dropping the v1 tables didn't remove it, since a trigger on `auth.users` isn't a dependent of `public.users` the way its own trigger was. This is now dropped outright — v2 populates `public.users` from application code during LeetCode sync, not a database trigger.
-- **Revoking a specific role's grant doesn't override a broader `PUBLIC` grant.** `is_room_member`/`is_room_host` got `EXECUTE` granted to `PUBLIC` by default at creation. `revoke execute ... from anon` looked like it worked (confirmed by the advisor going quiet), but `anon` was still covered by the untouched `PUBLIC` grant — the advisor's report appears to cache/lag rather than reflect live state, so the fix was verified directly with `has_function_privilege()`, not by re-reading the advisor. The correct fix is revoking from `PUBLIC` and granting back explicitly to `authenticated` only, which is what actually landed.
 
 The formula implemented is the **proposed default** from Epic 06, Story 1 — not a specified requirement:
 
