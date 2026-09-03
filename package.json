@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:extension": "node extension/build.js --env=dev",
+    "build:extension:prod": "node extension/build.js --env=prod"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

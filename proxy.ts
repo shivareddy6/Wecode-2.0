@@ -46,7 +46,7 @@ export async function proxy(request: NextRequest) {
   // Kept as an explicit allowlist of PUBLIC prefixes (rather than a
   // protected-prefix list) so a newly added route defaults to protected
   // unless someone deliberately opens it up.
-  const publicPrefixes = ["/", "/demo", "/api/auth/sync"];
+  const publicPrefixes = ["/", "/demo", "/api/auth/sync", "/api/auth/status"];
   const isPublicRoute = publicPrefixes.some(
     (prefix) =>
       request.nextUrl.pathname === prefix ||
