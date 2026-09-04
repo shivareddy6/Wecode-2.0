@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/dal";
 import { LeetCodeSyncForm } from "@/components/leetcode-sync-form";
+import { createRoom } from "@/app/rooms/actions";
 
 // Public landing page: the manual-paste sync flow (Epic 01, Story 5) is the
 // only thing here right now, since rooms/dashboard don't exist yet. Checks
@@ -50,6 +51,14 @@ async function SignedInCard() {
       <p className="text-lg font-medium">
         {user.displayName ?? user.leetcodeUsername}
       </p>
+      <form action={createRoom} className="mt-6">
+        <button
+          type="submit"
+          className="rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background"
+        >
+          Create a room
+        </button>
+      </form>
     </div>
   );
 }
