@@ -49,6 +49,24 @@ async function refreshStatus() {
   }
 }
 
+// If the tab that triggered the sync is already on WeCode (e.g. the
+// room-join screen from Epic 04, Story 2, or the landing page), reload it
+// in place rather than opening a second tab — a reload re-renders whatever
+// WeCode page was already open with the now-synced session, which for a
+// room-join screen means landing straight in the room, joined. Only open a
+// new tab when the current one is somewhere else (LeetCode, most likely).
+async function goToWeCode() {
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const isOnWeCode =
+    activeTab?.url && new URL(activeTab.url).origin === WECODE_CONFIG.apiBase;
+
+  if (isOnWeCode) {
+    chrome.tabs.reload(activeTab.id);
+  } else {
+    chrome.tabs.create({ url: WECODE_CONFIG.apiBase });
+  }
+}
+
 async function handleSync() {
   syncButton.disabled = true;
   setStatus("Checking LeetCode login…", "info");
@@ -85,7 +103,7 @@ async function handleSync() {
     }
 
     setStatus(`Connected as ${data.user.leetcodeUsername}`, "success");
-    setTimeout(() => chrome.tabs.create({ url: WECODE_CONFIG.apiBase }), 600);
+    setTimeout(goToWeCode, 600);
   } catch {
     setStatus("Couldn't reach WeCode. Check your connection.", "error");
   } finally {
