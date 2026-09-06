@@ -13,9 +13,13 @@ import {
 } from "@/lib/leetcode/client";
 import { isSupportedLanguage, LEETCODE_LANG_SLUG } from "@/lib/leetcode/languages";
 
+type CurrentProblem = { slug: string; title: string; difficulty: string };
+
 // Epic 03, Story 2/5/6 — submits to LeetCode's real judge and records a
-// real row in public.submissions (session_problem_id, not a bare slug —
-// see the room/session pivot). The cooldown check (Story 5) reads
+// real row in public.submissions, addressed by room + slug directly (see
+// docs/SCHEMA.md — the room-centric-rounds design). difficulty is looked
+// up server-side from rooms.current_problems, never trusted from the
+// client, since it feeds the scoring formula. The cooldown check reads
 // submissions directly; there's no separate rate-limit table.
 const COOLDOWN_SECONDS = 10;
 
@@ -29,17 +33,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { sessionProblemId, questionId, language, code } = (body ?? {}) as Record<
-    string,
-    unknown
-  >;
+  const { roomId, slug, questionId, language, code } = (body ?? {}) as Record<string, unknown>;
 
   if (
-    typeof sessionProblemId !== "string" ||
+    typeof roomId !== "string" ||
+    typeof slug !== "string" ||
     typeof questionId !== "string" ||
     typeof language !== "string" ||
     typeof code !== "string" ||
-    !sessionProblemId ||
+    !roomId ||
+    !slug ||
     !questionId ||
     !code.trim() ||
     !isSupportedLanguage(language)
@@ -49,13 +52,16 @@ export async function POST(request: Request) {
 
   const supabase = await createClient();
 
-  const { data: sessionProblem } = await supabase
-    .from("session_problems")
-    .select("leetcode_slug")
-    .eq("id", sessionProblemId)
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("current_problems")
+    .eq("id", roomId)
     .maybeSingle();
 
-  if (!sessionProblem) {
+  const currentProblems = (room?.current_problems ?? []) as CurrentProblem[];
+  const problem = currentProblems.find((p) => p.slug === slug);
+
+  if (!room || !problem) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
@@ -82,7 +88,8 @@ export async function POST(request: Request) {
   const { data: recent } = await supabase
     .from("submissions")
     .select("submitted_at")
-    .eq("session_problem_id", sessionProblemId)
+    .eq("room_id", roomId)
+    .eq("problem_slug", slug)
     .eq("user_id", user.id)
     .order("submitted_at", { ascending: false })
     .limit(1)
@@ -107,7 +114,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await submitSolution(
-      sessionProblem.leetcode_slug,
+      slug,
       LEETCODE_LANG_SLUG[language],
       code,
       questionId,
@@ -117,7 +124,9 @@ export async function POST(request: Request) {
     const { data: submission, error: insertError } = await supabase
       .from("submissions")
       .insert({
-        session_problem_id: sessionProblemId,
+        room_id: roomId,
+        problem_slug: slug,
+        difficulty: problem.difficulty,
         user_id: user.id,
         language,
         leetcode_submission_id: result.submissionId,

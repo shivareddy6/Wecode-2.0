@@ -30,13 +30,17 @@ export async function createRoom() {
   redirect(`/rooms/${data.id}`);
 }
 
-// Epic 05, Story 1/2 (minimal) — real session_problems row, real
-// submissions later, but a fixed preset/duration and a hardcoded problem
-// pool stand in for the real preset picker and random selection (that's
-// Epic 05's own pass, not this one).
+// Epic 05, Story 1/2 (minimal) — a fixed preset/duration and a hardcoded
+// problem pool stand in for the real preset picker and random selection
+// (Epic 05's own pass). The actual round transition — snapshotting the
+// outgoing round's slugs into permanent anti-repeat memory, clearing its
+// submissions, installing the new round — happens atomically in
+// start_room_round() (see the room-centric-rounds migration), not as
+// separate queries here: this is deliberately a thin wrapper around one
+// RPC call, not the source of that logic.
 const DEFAULT_DURATION_SECONDS = 30 * 60;
 
-export async function startSession(formData: FormData) {
+export async function startRound(formData: FormData) {
   const roomId = formData.get("roomId");
   const slug = formData.get("slug");
 
@@ -44,9 +48,9 @@ export async function startSession(formData: FormData) {
     throw new Error("Missing roomId or slug.");
   }
 
-  const { user, isHost } = await verifyRoomAccess(roomId);
+  const { isHost } = await verifyRoomAccess(roomId);
   if (!isHost) {
-    throw new Error("Only the host can start a session.");
+    throw new Error("Only the host can start a round.");
   }
 
   const entry = findCatalogEntry(slug);
@@ -55,37 +59,17 @@ export async function startSession(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const startedAt = new Date();
-  const endsAt = new Date(startedAt.getTime() + DEFAULT_DURATION_SECONDS * 1000);
 
-  const { data: session, error: sessionError } = await supabase
-    .from("sessions")
-    .insert({
-      room_id: roomId,
-      created_by: user.id,
-      preset: "warm_up",
-      duration_seconds: DEFAULT_DURATION_SECONDS,
-      started_at: startedAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-    })
-    .select("id")
-    .single();
-
-  if (sessionError || !session) {
-    throw new Error("Couldn't start session.");
-  }
-
-  const { error: problemError } = await supabase.from("session_problems").insert({
-    session_id: session.id,
-    leetcode_slug: entry.slug,
-    leetcode_title: entry.title,
-    difficulty: entry.difficulty,
-    position: 1,
+  const { error } = await supabase.rpc("start_room_round", {
+    p_room_id: roomId,
+    p_problems: [{ slug: entry.slug, title: entry.title, difficulty: entry.difficulty }],
+    p_duration_seconds: DEFAULT_DURATION_SECONDS,
+    p_preset: "warm_up",
   });
 
-  if (problemError) {
-    throw new Error("Couldn't add problem to session.");
+  if (error) {
+    throw new Error(error.message);
   }
 
-  redirect(`/rooms/${roomId}/sessions/${session.id}`);
+  redirect(`/rooms/${roomId}/solve/${entry.slug}`);
 }

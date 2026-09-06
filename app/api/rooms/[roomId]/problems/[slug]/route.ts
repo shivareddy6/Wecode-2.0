@@ -5,29 +5,33 @@ import { getValidLeetCodeCredentials, LeetCodeUnavailableError } from "@/lib/lee
 import { fetchProblem } from "@/lib/leetcode/client";
 import { SUPPORTED_LANGUAGES, LEETCODE_LANG_SLUG } from "@/lib/leetcode/languages";
 
+type CurrentProblem = { slug: string; title: string; difficulty: string };
+
 // Epic 03, Story 1/4 — real problem content plus per-language starter
-// code, scoped to a real session_problem (see the room/session pivot —
-// this used to be keyed by a bare slug).
+// code, addressed by room + slug directly (see docs/SCHEMA.md — the
+// room-centric-rounds design replaced session_problems).
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ sessionProblemId: string }> },
+  { params }: { params: Promise<{ roomId: string; slug: string }> },
 ) {
   const { user } = await verifySession();
-  const { sessionProblemId } = await params;
+  const { roomId, slug } = await params;
 
   const supabase = await createClient();
 
-  // RLS on session_problems already restricts this to room members/hosts
-  // — a null result means either the row doesn't exist or the caller
-  // can't see it, and both get the same 404, so neither leaks to the
-  // other.
-  const { data: sessionProblem } = await supabase
-    .from("session_problems")
-    .select("leetcode_slug")
-    .eq("id", sessionProblemId)
+  // RLS on rooms already restricts this to room members/hosts — a null
+  // result means either the room doesn't exist or the caller can't see
+  // it, and both get the same 404, so neither leaks to the other.
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("current_problems")
+    .eq("id", roomId)
     .maybeSingle();
 
-  if (!sessionProblem) {
+  const currentProblems = (room?.current_problems ?? []) as CurrentProblem[];
+  const isCurrent = currentProblems.some((p) => p.slug === slug);
+
+  if (!room || !isCurrent) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
@@ -53,7 +57,7 @@ export async function GET(
 
   let problem;
   try {
-    problem = await fetchProblem(sessionProblem.leetcode_slug, credentials);
+    problem = await fetchProblem(slug, credentials);
   } catch {
     return NextResponse.json(
       { error: "Couldn't reach LeetCode. Try again in a moment." },

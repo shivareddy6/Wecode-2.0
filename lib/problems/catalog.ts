@@ -1,7 +1,7 @@
 // A small hardcoded pool, standing in for real problem browsing/random
 // selection (Epic 05, Story 2) until that gets its own pass. Starting a
 // session picks one of these by slug — difficulty here matches
-// session_problems' check constraint (lowercase).
+// submissions' check constraint (lowercase).
 export const PROBLEM_CATALOG = [
   { slug: "two-sum", title: "Two Sum", difficulty: "easy" as const },
   { slug: "valid-parentheses", title: "Valid Parentheses", difficulty: "easy" as const },

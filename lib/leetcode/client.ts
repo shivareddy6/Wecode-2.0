@@ -193,6 +193,12 @@ export type LeetCodeSubmissionStatus = {
   totalCorrect?: number;
   totalTestcases?: number;
   runtimeError?: string;
+  // Only present on a Wrong Answer verdict — the specific case LeetCode's
+  // judge stopped on, not the full set (LeetCode itself only ever returns
+  // the first failing case, not every one).
+  lastTestcase?: string;
+  expectedOutput?: string;
+  codeOutput?: string;
 };
 
 export async function checkSubmissionStatus(
@@ -223,5 +229,104 @@ export async function checkSubmissionStatus(
     totalCorrect: data.total_correct,
     totalTestcases: data.total_testcases,
     runtimeError: data.runtime_error ?? data.full_runtime_error,
+    lastTestcase: data.last_testcase,
+    expectedOutput: data.expected_output,
+    codeOutput: Array.isArray(data.code_output) ? data.code_output.join("\n") : data.code_output,
+  };
+}
+
+export type LeetCodeInterpretResult = {
+  interpretId: string;
+};
+
+// LeetCode's "Run" — tests against example/custom cases via a separate
+// endpoint from submit/, so it never counts as a real judged attempt. Same
+// questionId-from-caller convention as submitSolution.
+export async function interpretSolution(
+  slug: string,
+  langSlug: string,
+  code: string,
+  questionId: string,
+  dataInput: string,
+  credentials: LeetCodeCredentials,
+): Promise<LeetCodeInterpretResult> {
+  const response = await fetch(`https://leetcode.com/problems/${slug}/interpret_solution/`, {
+    method: "POST",
+    headers: leetCodeHeaders(credentials, `https://leetcode.com/problems/${slug}/`),
+    body: JSON.stringify({
+      lang: langSlug,
+      question_id: questionId,
+      typed_code: code,
+      data_input: dataInput,
+    }),
+  });
+
+  if (response.status === 429) {
+    throw new LeetCodeRateLimitError();
+  }
+
+  if (!response.ok) {
+    throw new Error(`LeetCode run failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.interpret_id) {
+    throw new LeetCodeSessionExpiredError();
+  }
+
+  return { interpretId: String(data.interpret_id) };
+}
+
+export type LeetCodeInterpretStatus = {
+  state: "PENDING" | "STARTED" | "SUCCESS" | "FAILURE";
+  statusMessage: string;
+  totalCorrect?: number;
+  totalTestcases?: number;
+  runtimeError?: string;
+  // Per-case results. codeAnswer/expectedCodeAnswer are parallel arrays but
+  // LeetCode pads them with one extra trailing entry beyond totalTestcases
+  // — only the first totalTestcases entries are real. compareResult is the
+  // authoritative pass/fail signal: a "1"/"0" string, one char per real
+  // case (string-comparing codeAnswer vs expectedCodeAnswer is NOT
+  // reliable — LeetCode itself is the only source of truth here).
+  codeAnswer?: string[];
+  expectedCodeAnswer?: string[];
+  compareResult?: string;
+};
+
+// Same check/ endpoint as a real submission — LeetCode uses one generic
+// "is this async job done yet" check for both submission ids and interpret
+// ids, just with a different response shape.
+export async function checkInterpretStatus(
+  interpretId: string,
+  credentials: LeetCodeCredentials,
+): Promise<LeetCodeInterpretStatus> {
+  const response = await fetch(
+    `https://leetcode.com/submissions/detail/${interpretId}/check/`,
+    {
+      method: "GET",
+      headers: leetCodeHeaders(
+        credentials,
+        `https://leetcode.com/submissions/detail/${interpretId}/`,
+      ),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`LeetCode run-status check failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    state: data.state,
+    statusMessage: data.status_msg,
+    totalCorrect: data.total_correct,
+    totalTestcases: data.total_testcases,
+    runtimeError: data.runtime_error ?? data.full_runtime_error,
+    codeAnswer: data.code_answer,
+    expectedCodeAnswer: data.expected_code_answer,
+    compareResult: data.compare_result,
   };
 }

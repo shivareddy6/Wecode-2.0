@@ -13,7 +13,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -99,29 +99,47 @@ export type Database = {
         Row: {
           closed_at: string | null
           created_at: string
+          current_problems: Json
           host_user_id: string
           id: string
           invite_code: string
           participant_cap: number
+          round_duration_seconds: number | null
+          round_preset: string | null
+          round_started_at: string | null
+          round_status: string | null
           status: string
+          used_leetcode_slugs: string[]
         }
         Insert: {
           closed_at?: string | null
           created_at?: string
+          current_problems?: Json
           host_user_id: string
           id?: string
           invite_code: string
           participant_cap?: number
+          round_duration_seconds?: number | null
+          round_preset?: string | null
+          round_started_at?: string | null
+          round_status?: string | null
           status?: string
+          used_leetcode_slugs?: string[]
         }
         Update: {
           closed_at?: string | null
           created_at?: string
+          current_problems?: Json
           host_user_id?: string
           id?: string
           invite_code?: string
           participant_cap?: number
+          round_duration_seconds?: number | null
+          round_preset?: string | null
+          round_started_at?: string | null
+          round_status?: string | null
           status?: string
+          used_leetcode_slugs?: string[]
         }
         Relationships: [
           {
@@ -148,129 +166,49 @@ export type Database = {
         }
         Relationships: []
       }
-      session_problems: {
-        Row: {
-          difficulty: string
-          id: string
-          leetcode_slug: string
-          leetcode_title: string
-          position: number
-          session_id: string
-        }
-        Insert: {
-          difficulty: string
-          id?: string
-          leetcode_slug: string
-          leetcode_title: string
-          position: number
-          session_id: string
-        }
-        Update: {
-          difficulty?: string
-          id?: string
-          leetcode_slug?: string
-          leetcode_title?: string
-          position?: number
-          session_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "session_problems_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sessions: {
-        Row: {
-          created_by: string
-          duration_seconds: number
-          ended_at: string | null
-          ends_at: string
-          id: string
-          preset: string
-          room_id: string
-          started_at: string
-          status: string
-        }
-        Insert: {
-          created_by: string
-          duration_seconds: number
-          ended_at?: string | null
-          ends_at: string
-          id?: string
-          preset: string
-          room_id: string
-          started_at?: string
-          status?: string
-        }
-        Update: {
-          created_by?: string
-          duration_seconds?: number
-          ended_at?: string | null
-          ends_at?: string
-          id?: string
-          preset?: string
-          room_id?: string
-          started_at?: string
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sessions_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sessions_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "rooms"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       submissions: {
         Row: {
+          difficulty: string
           id: string
           judged_at: string | null
           language: string
           leetcode_submission_id: string | null
-          session_problem_id: string
+          problem_slug: string
+          room_id: string
           submitted_at: string
           user_id: string
           verdict: string
         }
         Insert: {
+          difficulty: string
           id?: string
           judged_at?: string | null
           language: string
           leetcode_submission_id?: string | null
-          session_problem_id: string
+          problem_slug: string
+          room_id: string
           submitted_at?: string
           user_id: string
           verdict?: string
         }
         Update: {
+          difficulty?: string
           id?: string
           judged_at?: string | null
           language?: string
           leetcode_submission_id?: string | null
-          session_problem_id?: string
+          problem_slug?: string
+          room_id?: string
           submitted_at?: string
           user_id?: string
           verdict?: string
         }
         Relationships: [
           {
-            foreignKeyName: "submissions_session_problem_id_fkey"
-            columns: ["session_problem_id"]
+            foreignKeyName: "submissions_room_id_fkey"
+            columns: ["room_id"]
             isOneToOne: false
-            referencedRelation: "session_problems"
+            referencedRelation: "rooms"
             referencedColumns: ["id"]
           },
           {
@@ -356,7 +294,7 @@ export type Database = {
     }
     Functions: {
       compute_leaderboard: {
-        Args: { p_session_id: string }
+        Args: { p_room_id: string }
         Returns: {
           avatar_url: string
           display_name: string
@@ -368,6 +306,15 @@ export type Database = {
       }
       is_room_host: { Args: { p_room_id: string }; Returns: boolean }
       is_room_member: { Args: { p_room_id: string }; Returns: boolean }
+      start_room_round: {
+        Args: {
+          p_duration_seconds: number
+          p_preset: string
+          p_problems: Json
+          p_room_id: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
@@ -386,12 +333,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -415,11 +362,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -440,11 +387,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -465,11 +412,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -482,11 +429,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

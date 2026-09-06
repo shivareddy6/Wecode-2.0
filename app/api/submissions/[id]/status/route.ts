@@ -63,5 +63,8 @@ export async function GET(
     totalCorrect: status.totalCorrect,
     totalTestcases: status.totalTestcases,
     runtimeError: status.runtimeError,
+    lastTestcase: status.lastTestcase,
+    expectedOutput: status.expectedOutput,
+    codeOutput: status.codeOutput,
   });
 }
