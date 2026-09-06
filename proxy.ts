@@ -53,7 +53,17 @@ export async function proxy(request: NextRequest) {
       (prefix !== "/" && request.nextUrl.pathname.startsWith(prefix)),
   );
 
-  if (!isAuthenticated && !isPublicRoute) {
+  // Epic 04, Story 2 — a room's invite link (/rooms/[code], exactly one
+  // segment past /rooms/) has to be reachable while logged out: that page
+  // is what shows the LeetCode sync form to a signed-out visitor before
+  // completing their join. This intentionally does NOT match anything
+  // deeper (e.g. /rooms/[code]/solve/[slug]) — those stay behind the
+  // normal redirect-to-"/" here, same as before. The page itself (and the
+  // DAL underneath it) still does the actual authorization check; this is
+  // only route-level redirect UX, per the comment at the top of this file.
+  const isRoomJoinRoute = /^\/rooms\/[^/]+\/?$/.test(request.nextUrl.pathname);
+
+  if (!isAuthenticated && !isPublicRoute && !isRoomJoinRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

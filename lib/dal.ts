@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // Centralized session/authorization checks — every Server Component,
 // Server Action, and Route Handler that needs to know who's asking calls
@@ -68,12 +69,12 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
 });
 
 // Resolves a room's short, shareable invite_code to its real internal id.
-// Uses the normal RLS-scoped client, not a service-role bypass — this is
-// NOT the "look up a room you're not a member of yet" case (that's Epic
-// 04 Story 2's join flow, and needs the service-role pattern SCHEMA.md
-// documents for it). Here the caller must already be a member/host for
-// the row to come back at all; a non-member gets the same "not found"
-// redirect as an unknown code, so this can't be used to enumerate rooms.
+// Uses the normal RLS-scoped client, not a service-role bypass. The caller
+// must already be a member/host for the row to come back at all; a
+// non-member gets the same "not found" redirect as an unknown code, so
+// this can't be used to enumerate rooms. For the "look up a room you're
+// not a member of yet" case — Epic 04 Story 2's join flow — see
+// lookupRoomForJoin below instead.
 export async function resolveRoomIdByCode(code: string): Promise<string> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -87,6 +88,42 @@ export async function resolveRoomIdByCode(code: string): Promise<string> {
   }
 
   return data.id;
+}
+
+// Service-role lookup of a room by invite_code for someone who isn't a
+// member yet (Epic 04, Story 2's join flow) — the RLS "select" policy on
+// rooms only ever grants access to existing members/host by design, so a
+// prospective joiner can't be resolved through the normal RLS-scoped
+// client at all (see SCHEMA.md's rooms entry, ARCHITECTURE.md's DAL
+// section). This is one of the two existing service-role bypass paths in
+// the app; it only ever returns the handful of fields the join Server
+// Action (app/rooms/actions.ts's joinRoom) needs to decide whether joining
+// is possible, never anything RLS wouldn't otherwise show a member.
+export type JoinableRoom = {
+  id: string;
+  status: "open" | "closed";
+  hostUserId: string;
+  participantCap: number;
+};
+
+export async function lookupRoomForJoin(code: string): Promise<JoinableRoom | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("rooms")
+    .select("id, status, host_user_id, participant_cap")
+    .eq("invite_code", code)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    status: data.status as "open" | "closed",
+    hostUserId: data.host_user_id,
+    participantCap: data.participant_cap,
+  };
 }
 
 // Room-scoped authorization, built on the same is_room_member/is_room_host

@@ -2,8 +2,9 @@
 
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
-import { verifySession, verifyRoomAccess } from "@/lib/dal";
+import { verifySession, verifyRoomAccess, lookupRoomForJoin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { findCatalogEntry } from "@/lib/problems/catalog";
 
 function generateInviteCode(): string {
@@ -28,6 +29,69 @@ export async function createRoom() {
   }
 
   redirect(`/rooms/${data.invite_code}`);
+}
+
+// Epic 04, Story 2 — join a room by invite code. Called directly from
+// app/rooms/[code]/page.tsx's render (not from a <form>) so that simply
+// opening the link joins automatically per the story's acceptance
+// criteria; it's still a Server Action, per ARCHITECTURE.md's "join room"
+// call-out, not a page doing the mutation itself. A no-op for the host or
+// an already-active participant, so it's safe to call on every page load.
+export async function joinRoom(code: string) {
+  const { user } = await verifySession();
+
+  const room = await lookupRoomForJoin(code);
+  if (!room) {
+    redirect("/");
+  }
+
+  if (room.hostUserId === user.id) {
+    return;
+  }
+
+  // Membership and the cap both need the service-role client: a
+  // non-member can't see room_participants rows at all under RLS (that's
+  // the point of the policy), including their own would-be row, so there
+  // is no RLS-scoped way to answer "am I already in, and how full is it."
+  const admin = createAdminClient();
+  const { data: activeParticipants, error: rosterError } = await admin
+    .from("room_participants")
+    .select("user_id")
+    .eq("room_id", room.id)
+    .is("removed_at", null);
+
+  if (rosterError) {
+    throw new Error("Couldn't check room membership. Try again.");
+  }
+
+  const alreadyMember = (activeParticipants ?? []).some(
+    (p) => p.user_id === user.id,
+  );
+  if (alreadyMember) {
+    return;
+  }
+
+  if (room.status !== "open") {
+    throw new Error("This room is closed and isn't accepting new participants.");
+  }
+
+  if ((activeParticipants?.length ?? 0) >= room.participantCap) {
+    throw new Error("This room is full.");
+  }
+
+  // The insert itself goes through the normal RLS-scoped client, not the
+  // admin one — "users can join a room for themselves" (user_id =
+  // auth.uid()) is exactly the check this write needs, so satisfying it
+  // via real RLS keeps the actual membership write inside the normal
+  // authorization model rather than the service-role bypass.
+  const supabase = await createClient();
+  const { error: insertError } = await supabase
+    .from("room_participants")
+    .insert({ room_id: room.id, user_id: user.id });
+
+  if (insertError) {
+    throw new Error("Couldn't join the room. Try again.");
+  }
 }
 
 // Epic 05, Story 1/2 (minimal) — a fixed preset/duration and a hardcoded
