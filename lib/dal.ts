@@ -67,6 +67,28 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
   };
 });
 
+// Resolves a room's short, shareable invite_code to its real internal id.
+// Uses the normal RLS-scoped client, not a service-role bypass — this is
+// NOT the "look up a room you're not a member of yet" case (that's Epic
+// 04 Story 2's join flow, and needs the service-role pattern SCHEMA.md
+// documents for it). Here the caller must already be a member/host for
+// the row to come back at all; a non-member gets the same "not found"
+// redirect as an unknown code, so this can't be used to enumerate rooms.
+export async function resolveRoomIdByCode(code: string): Promise<string> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("rooms")
+    .select("id")
+    .eq("invite_code", code)
+    .maybeSingle();
+
+  if (error || !data) {
+    redirect("/");
+  }
+
+  return data.id;
+}
+
 // Room-scoped authorization, built on the same is_room_member/is_room_host
 // SQL functions the RLS policies use (see SCHEMA.md's "Authorization
 // model") — this is the app-code equivalent check for call sites that need

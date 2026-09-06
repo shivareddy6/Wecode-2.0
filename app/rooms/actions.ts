@@ -20,14 +20,14 @@ export async function createRoom() {
   const { data, error } = await supabase
     .from("rooms")
     .insert({ host_user_id: user.id, invite_code: generateInviteCode() })
-    .select("id")
+    .select("invite_code")
     .single();
 
   if (error || !data) {
     throw new Error("Couldn't create room.");
   }
 
-  redirect(`/rooms/${data.id}`);
+  redirect(`/rooms/${data.invite_code}`);
 }
 
 // Epic 05, Story 1/2 (minimal) — a fixed preset/duration and a hardcoded
@@ -42,10 +42,11 @@ const DEFAULT_DURATION_SECONDS = 30 * 60;
 
 export async function startRound(formData: FormData) {
   const roomId = formData.get("roomId");
+  const code = formData.get("code");
   const slug = formData.get("slug");
 
-  if (typeof roomId !== "string" || typeof slug !== "string") {
-    throw new Error("Missing roomId or slug.");
+  if (typeof roomId !== "string" || typeof code !== "string" || typeof slug !== "string") {
+    throw new Error("Missing roomId, code, or slug.");
   }
 
   const { isHost } = await verifyRoomAccess(roomId);
@@ -71,5 +72,5 @@ export async function startRound(formData: FormData) {
     throw new Error(error.message);
   }
 
-  redirect(`/rooms/${roomId}/solve/${entry.slug}`);
+  redirect(`/rooms/${code}/solve/${entry.slug}`);
 }
