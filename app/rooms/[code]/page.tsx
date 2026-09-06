@@ -2,21 +2,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { lookupRoomForJoin, resolveRoomIdByCode, verifyRoomAccess } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
-import { PROBLEM_CATALOG } from "@/lib/problems/catalog";
-import { startRound, joinRoom } from "@/app/rooms/actions";
+import { ROUND_PRESETS } from "@/lib/problems/round-selection";
+import { computeRoundDeadline, isPastDeadline } from "@/lib/rounds/deadline";
+import { startRound, joinRoom, endRound } from "@/app/rooms/actions";
 import { LeetCodeSyncForm } from "@/components/leetcode-sync-form";
+import { RoundCountdown } from "@/components/round-countdown";
 
 type CurrentProblem = { slug: string; title: string; difficulty: "easy" | "medium" | "hard" };
 
-// Epic 04, Story 1/2/3/6 (minimal) — room info, joining, and, for the
-// host, starting a round. Addressed by the room's short invite_code, not
-// its internal UUID — a long UUID in every room-scoped URL was the actual
-// complaint, and invite_code already exists/is already unique, so this
-// reuses it rather than adding anything new. No live participant list or
-// moderation yet — those are real Epic 04 stories, not touched by this
-// pass. No session history list either: a room has exactly one current
-// round, not a growing list of past ones (see docs/SCHEMA.md — the
-// room-centric-rounds design).
+const DEFAULT_DURATION_MINUTES = 30;
+
+// Epic 04, Story 1/2/3/6 + Epic 05, Story 1/2/3/6/7 (real pass) — room
+// info, joining, and, for the host, starting/ending a round with a real
+// preset + duration + random selection instead of the old single-slug
+// dropdown. Addressed by the room's short invite_code, not its internal
+// UUID (see docs/SCHEMA.md — the room-centric-rounds design). No live
+// participant list or moderation yet — those are Epic 04, Stories 3/4/5,
+// not touched by this pass. No session history list either: a room has
+// exactly one current round, not a growing list of past ones.
 export default async function RoomPage({
   params,
 }: {
@@ -65,13 +68,32 @@ export default async function RoomPage({
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("status, current_problems, round_status, used_leetcode_slugs")
+    .select(
+      "status, current_problems, round_status, round_started_at, round_duration_seconds, round_preset",
+    )
     .eq("id", roomId)
     .single();
 
   const currentProblems = (room?.current_problems ?? []) as CurrentProblem[];
-  const usedSlugs = room?.used_leetcode_slugs ?? [];
-  const availableCatalog = PROBLEM_CATALOG.filter((entry) => !usedSlugs.includes(entry.slug));
+
+  // Epic 05, Story 5 — nothing pushes a round's timer expiring; it's
+  // detected here (or in app/api/submissions/route.ts, on a late attempt)
+  // and lazily written back via finalize_expired_round so round_status
+  // converges to 'ended' instead of staying stuck on a stale 'active'. The
+  // deadline math itself is duplicated client-side in RoundCountdown —
+  // both read the same round_started_at/round_duration_seconds, so they
+  // can't disagree about *when* the round ends, only about whether the DB
+  // row has caught up to that fact yet.
+  const deadline = computeRoundDeadline(room?.round_started_at ?? null, room?.round_duration_seconds ?? null);
+  const isExpired = isPastDeadline(deadline);
+
+  if (room?.round_status === "active" && isExpired) {
+    await supabase.rpc("finalize_expired_round", { p_room_id: roomId });
+  }
+
+  const effectiveRoundStatus = (
+    room?.round_status === "active" && isExpired ? "ended" : room?.round_status ?? null
+  ) as "active" | "ended" | null;
 
   return (
     <main className="mx-auto flex max-w-xl flex-col gap-6 p-8">
@@ -83,22 +105,33 @@ export default async function RoomPage({
       </div>
 
       {isHost ? (
-        availableCatalog.length > 0 ? (
+        <div className="flex flex-col gap-3">
           <form action={startRound} className="flex flex-col gap-3">
             <input type="hidden" name="roomId" value={roomId} />
             <input type="hidden" name="code" value={code} />
             <label className="text-sm font-medium">Start a round</label>
             <select
-              name="slug"
+              name="preset"
               required
+              defaultValue="warm_up"
               className="rounded-md border border-black/10 bg-transparent px-2 py-1.5 text-sm dark:border-white/15"
             >
-              {availableCatalog.map((entry) => (
-                <option key={entry.slug} value={entry.slug}>
-                  {entry.title} ({entry.difficulty})
+              {Object.entries(ROUND_PRESETS).map(([key, preset]) => (
+                <option key={key} value={key}>
+                  {preset.label} ({preset.description})
                 </option>
               ))}
             </select>
+            <label className="text-sm font-medium">Duration (minutes)</label>
+            <input
+              type="number"
+              name="durationMinutes"
+              min={5}
+              max={180}
+              defaultValue={DEFAULT_DURATION_MINUTES}
+              required
+              className="w-32 rounded-md border border-black/10 bg-transparent px-2 py-1.5 text-sm dark:border-white/15"
+            />
             <button
               type="submit"
               className="rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background self-start"
@@ -106,17 +139,32 @@ export default async function RoomPage({
               Start
             </button>
           </form>
-        ) : (
-          <p className="text-sm text-zinc-500">
-            No new problems left in the catalog — every problem has already been used in this room.
-          </p>
-        )
+
+          {effectiveRoundStatus === "active" ? (
+            <form action={endRound}>
+              <input type="hidden" name="roomId" value={roomId} />
+              <button
+                type="submit"
+                className="rounded-full border border-black/10 px-4 py-1.5 text-sm font-medium self-start dark:border-white/15"
+              >
+                End round early
+              </button>
+            </form>
+          ) : null}
+        </div>
       ) : null}
 
       <div>
-        <h2 className="mb-2 text-sm font-medium">
-          Current round {room?.round_status ? `(${room.round_status})` : null}
-        </h2>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-medium">
+            Current round {effectiveRoundStatus ? `(${effectiveRoundStatus})` : null}
+          </h2>
+          <RoundCountdown
+            roundStartedAt={room?.round_started_at ?? null}
+            roundDurationSeconds={room?.round_duration_seconds ?? null}
+            roundStatus={effectiveRoundStatus}
+          />
+        </div>
         {currentProblems.length > 0 ? (
           <ul className="flex flex-col gap-1">
             {currentProblems.map((problem) => (

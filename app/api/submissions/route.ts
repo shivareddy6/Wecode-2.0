@@ -12,6 +12,7 @@ import {
   LeetCodeSessionExpiredError,
 } from "@/lib/leetcode/client";
 import { isSupportedLanguage, LEETCODE_LANG_SLUG } from "@/lib/leetcode/languages";
+import { computeRoundDeadline, isPastDeadline } from "@/lib/rounds/deadline";
 
 type CurrentProblem = { slug: string; title: string; difficulty: string };
 
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("current_problems")
+    .select("current_problems, round_status, round_started_at, round_duration_seconds")
     .eq("id", roomId)
     .maybeSingle();
 
@@ -63,6 +64,22 @@ export async function POST(request: Request) {
 
   if (!room || !problem) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  // Epic 05, Story 5 (revised) — a submission after the deadline is no
+  // longer rejected: LeetCode still judges it for real, it's just tagged
+  // is_out_of_contest so compute_leaderboard() excludes it entirely and
+  // it can be shown distinctly wherever submissions are displayed (the
+  // solve screen now, chat later). Checked directly off the timestamps
+  // rather than trusting round_status alone: that column only converges
+  // to 'ended' lazily (see finalize_expired_round), so a round can be
+  // genuinely over before the row says so. Best-effort nudge that flip
+  // along anyway, so the room view doesn't keep showing a stale 'active'.
+  const deadline = computeRoundDeadline(room.round_started_at, room.round_duration_seconds);
+  const isOutOfContest = room.round_status !== "active" || isPastDeadline(deadline);
+
+  if (isOutOfContest) {
+    await supabase.rpc("finalize_expired_round", { p_room_id: roomId });
   }
 
   let credentials;
@@ -131,6 +148,7 @@ export async function POST(request: Request) {
         language,
         leetcode_submission_id: result.submissionId,
         verdict: "pending",
+        is_out_of_contest: isOutOfContest,
       })
       .select("id")
       .single();
@@ -142,7 +160,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ submissionId: submission.id });
+    return NextResponse.json({ submissionId: submission.id, outOfContest: isOutOfContest });
   } catch (error) {
     if (error instanceof LeetCodeSessionExpiredError) {
       await markLeetCodeSessionStale(user.id);

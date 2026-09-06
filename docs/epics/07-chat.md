@@ -30,3 +30,12 @@ As the system, I want basic sanitization and a length limit on chat messages, so
 - Acceptance criteria:
   - Messages are sanitized before storage/render (no raw HTML execution).
   - Messages beyond a reasonable length are rejected client- and server-side.
+
+### Story 5 — Submission activity in chat
+As a participant, I want to see when someone in the room submits a problem, so the room feels alive without everyone having to announce it themselves.
+
+- Acceptance criteria:
+  - A system-style chat entry appears when a participant's submission is judged, naming the participant, the problem, and the verdict.
+  - A submission flagged `is_out_of_contest` (Epic 05, Story 5 — made after the round's deadline) is visibly marked as out-of-contest in that chat entry, distinct from an in-contest one, so it's never mistaken for a scoring submission.
+
+**Status: Not started** (added 2026-09-06, when the out-of-contest requirement was raised — this story didn't exist before then). Depends on this epic existing at all (nothing here is built yet) and on Epic 11 for delivery. The data it needs already exists: `submissions.is_out_of_contest` (see `docs/SCHEMA.md`), set at insert time in `app/api/submissions/route.ts`.

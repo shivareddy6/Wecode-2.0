@@ -2,10 +2,11 @@
 
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
+import { refresh } from "next/cache";
 import { verifySession, verifyRoomAccess, lookupRoomForJoin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findCatalogEntry } from "@/lib/problems/catalog";
+import { isRoundPreset, selectRoundProblems } from "@/lib/problems/round-selection";
 
 function generateInviteCode(): string {
   return randomBytes(6).toString("base64url");
@@ -94,23 +95,40 @@ export async function joinRoom(code: string) {
   }
 }
 
-// Epic 05, Story 1/2 (minimal) — a fixed preset/duration and a hardcoded
-// problem pool stand in for the real preset picker and random selection
-// (Epic 05's own pass). The actual round transition — snapshotting the
-// outgoing round's slugs into permanent anti-repeat memory, clearing its
-// submissions, installing the new round — happens atomically in
-// start_room_round() (see the room-centric-rounds migration), not as
-// separate queries here: this is deliberately a thin wrapper around one
-// RPC call, not the source of that logic.
-const DEFAULT_DURATION_SECONDS = 30 * 60;
+const MIN_DURATION_MINUTES = 5;
+const MAX_DURATION_MINUTES = 180;
 
+// Epic 05, Story 1/2 (real pass) — host picks a preset + duration;
+// selectRoundProblems (lib/problems/round-selection.ts) does the actual
+// random selection matching that preset's difficulty counts, filtered
+// against every slug this room has ever run. This function is still just
+// the thin wrapper it always was: the atomic round transition —
+// snapshotting the outgoing round's slugs into permanent anti-repeat
+// memory, clearing its submissions, installing the new round — happens in
+// start_room_round() (see the room-centric-rounds migration), not here.
 export async function startRound(formData: FormData) {
   const roomId = formData.get("roomId");
   const code = formData.get("code");
-  const slug = formData.get("slug");
+  const preset = formData.get("preset");
+  const durationMinutesRaw = formData.get("durationMinutes");
 
-  if (typeof roomId !== "string" || typeof code !== "string" || typeof slug !== "string") {
-    throw new Error("Missing roomId, code, or slug.");
+  if (
+    typeof roomId !== "string" ||
+    typeof code !== "string" ||
+    typeof preset !== "string" ||
+    typeof durationMinutesRaw !== "string" ||
+    !isRoundPreset(preset)
+  ) {
+    throw new Error("Missing roomId, code, or preset.");
+  }
+
+  const durationMinutes = Number(durationMinutesRaw);
+  if (
+    !Number.isFinite(durationMinutes) ||
+    durationMinutes < MIN_DURATION_MINUTES ||
+    durationMinutes > MAX_DURATION_MINUTES
+  ) {
+    throw new Error(`Duration must be between ${MIN_DURATION_MINUTES} and ${MAX_DURATION_MINUTES} minutes.`);
   }
 
   const { isHost } = await verifyRoomAccess(roomId);
@@ -118,23 +136,73 @@ export async function startRound(formData: FormData) {
     throw new Error("Only the host can start a round.");
   }
 
-  const entry = findCatalogEntry(slug);
-  if (!entry) {
-    throw new Error("Unknown problem.");
+  const supabase = await createClient();
+
+  const { data: room, error: roomError } = await supabase
+    .from("rooms")
+    .select("used_leetcode_slugs")
+    .eq("id", roomId)
+    .single();
+
+  if (roomError || !room) {
+    throw new Error("Couldn't read the room's history. Try again.");
   }
 
-  const supabase = await createClient();
+  const selection = selectRoundProblems(preset, room.used_leetcode_slugs);
+  if (!selection.ok) {
+    throw new Error(selection.error);
+  }
 
   const { error } = await supabase.rpc("start_room_round", {
     p_room_id: roomId,
-    p_problems: [{ slug: entry.slug, title: entry.title, difficulty: entry.difficulty }],
-    p_duration_seconds: DEFAULT_DURATION_SECONDS,
-    p_preset: "warm_up",
+    p_problems: selection.problems,
+    p_duration_seconds: durationMinutes * 60,
+    p_preset: preset,
   });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  redirect(`/rooms/${code}/solve/${entry.slug}`);
+  redirect(`/rooms/${code}`);
+}
+
+// Epic 05, Story 6 — host ends the round immediately, without starting a
+// new one, so participants can see it's over (and, once Epic 06 exists, a
+// locked leaderboard) before the host decides what's next. Distinct from
+// startRound, which always ends the current round implicitly by replacing
+// it — this leaves current_problems/round_started_at in place and just
+// flips round_status, matching start_room_round's own "same finalization
+// as automatic expiry" language in the epic's AC. A direct rooms update,
+// not the finalize_expired_round RPC — that one's SECURITY DEFINER so any
+// member can trigger it for a genuinely expired round; this is host-only
+// and the "hosts manage their own rooms" RLS policy already allows it
+// directly.
+export async function endRound(formData: FormData) {
+  const roomId = formData.get("roomId");
+
+  if (typeof roomId !== "string") {
+    throw new Error("Missing roomId.");
+  }
+
+  const { isHost } = await verifyRoomAccess(roomId);
+  if (!isHost) {
+    throw new Error("Only the host can end a round.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("rooms")
+    .update({ round_status: "ended" })
+    .eq("id", roomId)
+    .eq("round_status", "active");
+
+  if (error) {
+    throw new Error("Couldn't end the round. Try again.");
+  }
+
+  // No redirect() here (unlike startRound/createRoom) — the host stays on
+  // the room page, so the mutation needs an explicit refresh() (Next 16's
+  // next/cache API) for the now-ended round_status to actually show up.
+  refresh();
 }

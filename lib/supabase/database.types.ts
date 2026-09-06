@@ -170,6 +170,7 @@ export type Database = {
         Row: {
           difficulty: string
           id: string
+          is_out_of_contest: boolean
           judged_at: string | null
           language: string
           leetcode_submission_id: string | null
@@ -182,6 +183,7 @@ export type Database = {
         Insert: {
           difficulty: string
           id?: string
+          is_out_of_contest?: boolean
           judged_at?: string | null
           language: string
           leetcode_submission_id?: string | null
@@ -194,6 +196,7 @@ export type Database = {
         Update: {
           difficulty?: string
           id?: string
+          is_out_of_contest?: boolean
           judged_at?: string | null
           language?: string
           leetcode_submission_id?: string | null
@@ -303,6 +306,10 @@ export type Database = {
           total_score: number
           user_id: string
         }[]
+      }
+      finalize_expired_round: {
+        Args: { p_room_id: string }
+        Returns: undefined
       }
       is_room_host: { Args: { p_room_id: string }; Returns: boolean }
       is_room_member: { Args: { p_room_id: string }; Returns: boolean }
