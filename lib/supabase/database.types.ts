@@ -313,6 +313,7 @@ export type Database = {
       }
       is_room_host: { Args: { p_room_id: string }; Returns: boolean }
       is_room_member: { Args: { p_room_id: string }; Returns: boolean }
+      join_room: { Args: { p_room_id: string }; Returns: undefined }
       start_room_round: {
         Args: {
           p_duration_seconds: number

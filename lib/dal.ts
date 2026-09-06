@@ -95,22 +95,15 @@ export async function resolveRoomIdByCode(code: string): Promise<string> {
 // rooms only ever grants access to existing members/host by design, so a
 // prospective joiner can't be resolved through the normal RLS-scoped
 // client at all (see SCHEMA.md's rooms entry, ARCHITECTURE.md's DAL
-// section). This is one of the two existing service-role bypass paths in
-// the app; it only ever returns the handful of fields the join Server
-// Action (app/rooms/actions.ts's joinRoom) needs to decide whether joining
-// is possible, never anything RLS wouldn't otherwise show a member.
-export type JoinableRoom = {
-  id: string;
-  status: "open" | "closed";
-  hostUserId: string;
-  participantCap: number;
-};
-
-export async function lookupRoomForJoin(code: string): Promise<JoinableRoom | null> {
+// section). Only ever returns the id: existence is all the two call sites
+// (the room page's logged-out branch, and joinRoom below) need from this —
+// status/host/cap checks now live inside the join_room() SQL function
+// itself (see the join_room_atomic migration), not here.
+export async function lookupRoomForJoin(code: string): Promise<{ id: string } | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("rooms")
-    .select("id, status, host_user_id, participant_cap")
+    .select("id")
     .eq("invite_code", code)
     .maybeSingle();
 
@@ -118,12 +111,7 @@ export async function lookupRoomForJoin(code: string): Promise<JoinableRoom | nu
     return null;
   }
 
-  return {
-    id: data.id,
-    status: data.status as "open" | "closed",
-    hostUserId: data.host_user_id,
-    participantCap: data.participant_cap,
-  };
+  return { id: data.id };
 }
 
 // Room-scoped authorization, built on the same is_room_member/is_room_host
