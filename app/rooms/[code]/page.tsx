@@ -100,7 +100,10 @@ export default async function RoomPage({
       <div>
         <h1 className="text-xl font-semibold">Room</h1>
         <p className="text-sm text-zinc-500">
-          Invite code: <code className="font-mono">{code}</code> ({room?.status})
+          Invite code: <code className="font-mono">{code}</code> ({room?.status}) ·{" "}
+          <Link href={`/rooms/${code}/leaderboard`} className="underline">
+            Leaderboard
+          </Link>
         </p>
       </div>
 
