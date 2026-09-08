@@ -18,9 +18,9 @@ As the system, I want to compute a per-problem score for each accepted solution 
   - A problem never attempted, or attempted but never solved by session end, contributes 0 points and no penalty.
   - A submission flagged `is_out_of_contest` (Epic 05, Story 5 — made after the round's deadline) contributes 0 points and no penalty, regardless of verdict, the same as a problem never attempted.
 
-**Status: Partial.** The out-of-contest exclusion is already implemented and verified — `compute_leaderboard()` (`supabase/migrations/20260906100000_out_of_contest_submissions.sql`) filters `is_out_of_contest` rows out of both the score and the wrong-attempt penalty count. The rest of this story (the function itself, the configurable constants in `scoring_config`) predates this epic being picked up — see `docs/SCHEMA.md`'s "The leaderboard: a function, not a table" section — but nothing yet calls `compute_leaderboard()` from application code; there's no leaderboard UI.
+**Status: Done.** The out-of-contest exclusion was already implemented and verified — `compute_leaderboard()` (`supabase/migrations/20260906100000_out_of_contest_submissions.sql`) filters `is_out_of_contest` rows out of both the score and the wrong-attempt penalty count. The function itself and the configurable constants in `scoring_config` predate this epic being picked up — see `docs/SCHEMA.md`'s "The leaderboard: a function, not a table" section.
 
-**Known gap to resolve when this story is actually picked up:** `compute_leaderboard()`'s final `users` filter only includes rows from `room_participants` (`where u.id in (select rp.user_id from room_participants where room_id = ... and removed_at is null)`), and the host never gets a `room_participants` row — that's by design elsewhere (`is_room_host` is a separate check from membership; see `docs/SCHEMA.md`'s Authorization model). Net effect: a host's own submissions currently can't appear on the leaderboard at all, no matter what they solve. This isn't just a one-line bug fix — it's a real product question worth exploring before deciding: does the host compete in their own room by default (then the function needs to include `rooms.host_user_id` alongside `room_participants`, e.g. a `union`), or is the host meant to be a neutral organizer who doesn't show up on standings at all (then the current behavior might actually be correct, and the "gap" is really just that it's undocumented/unintentional-looking)? There's also a middle option — host competes only if they also explicitly join as a participant. Explore the options and decide deliberately when this story is built, rather than defaulting to whichever behavior falls out of the current query.
+**Host-competes decision, resolved:** the host is no different from any other user except for the start/end/restart-round powers — they compete on the leaderboard by default. First fixed narrowly (`supabase/migrations/20260906120000_host_competes_on_leaderboard.sql`) by unioning `rooms.host_user_id` into `compute_leaderboard()`'s roster — but that only fixed the leaderboard, and the same "forget the union, host silently drops out" risk would've resurfaced in every future room-scoped feature (participant list, chat presence). Superseded by a schema-level fix (`supabase/migrations/20260906130000_host_is_a_participant.sql`, see `docs/SCHEMA.md`'s "Room membership: the host is a participant too"): the host now gets a real `room_participants` row from `create_room()`, so `compute_leaderboard()` is back to a plain, un-unioned read of that table — correct by construction, not by remembering to compose two sources. A plain server-rendered leaderboard view calls this function — `app/rooms/[code]/leaderboard/page.tsx`, linked from the room page — matching Story 2's note that the static view comes first, socket push later.
 
 ### Story 2 — Live leaderboard updates
 As a participant, I want the leaderboard to update live as people solve problems, so the competition feels real-time.
@@ -29,11 +29,15 @@ As a participant, I want the leaderboard to update live as people solve problems
   - Leaderboard updates are pushed via the socket.io server (Epic 11) immediately after the score is written to the scoring view/table, not on a polling interval.
   - The UI reflects a new score within roughly a second or two of an Accepted verdict, without a manual refresh.
 
+**Status: Partial.** The leaderboard view itself exists (`app/rooms/[code]/leaderboard/page.tsx`) and reflects a fresh score on the next page load/`router.refresh()`, but nothing pushes it — that's Epic 11's socket server, not built yet. Deliberate ordering, not an oversight: get the static view right first, layer the push on once Epic 11 exists.
+
 ### Story 3 — Per-session reset
 As a participant, I want the leaderboard to reset at the start of each new session, so every round starts fair.
 
 - Acceptance criteria:
   - Starting a new session (Epic 05, Story 7) clears the visible leaderboard and begins scoring from zero for that session.
+
+**Status: Done, by construction.** `start_room_round()` deletes the outgoing round's `submissions` outright (see `docs/SCHEMA.md`'s "Room-centric rounds"), and `compute_leaderboard()` only ever reads a room's current submissions — so a new round already scores from zero without any leaderboard-specific reset logic needed.
 
 ### Story 4 — Final standings and breakdown
 As a participant, I want to see final standings and a per-problem breakdown once a session ends, so I can review how the round went.
@@ -50,3 +54,5 @@ As a host, I want the scoring formula's constants to be tunable without a code d
 
 - Acceptance criteria:
   - Base points, decay rate, floor, and penalty values are stored as configuration (not hardcoded), editable centrally.
+
+**Status: Done.** `scoring_config` (see `docs/SCHEMA.md`) predates this epic being picked up — `compute_leaderboard()` reads its constants from there, not hardcoded values, and editing a row doesn't require a migration.

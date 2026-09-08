@@ -14,15 +14,22 @@ function generateInviteCode(): string {
 // Epic 04, Story 1 (minimal) — creating a room is the only on-ramp now;
 // there's no separate "solo mode" shortcut (solo just means you're the
 // only participant in a room you host yourself).
+//
+// Epic 04/06 design decision — the host gets a real room_participants row
+// from the moment the room exists, same as anyone who joins later, rather
+// than being tracked purely via rooms.host_user_id (see docs/SCHEMA.md's
+// "Room membership: the host is a participant too"). create_room() does
+// both inserts atomically in one SQL function, the same "one round trip,
+// not two app-layer ones" shape as join_room()/start_room_round() — a
+// raw two-step insert here would risk an orphaned room with no host
+// participant row if the second insert failed.
 export async function createRoom() {
-  const { user } = await verifySession();
+  await verifySession();
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from("rooms")
-    .insert({ host_user_id: user.id, invite_code: generateInviteCode() })
-    .select("invite_code")
-    .single();
+  const { data, error } = await supabase.rpc("create_room", {
+    p_invite_code: generateInviteCode(),
+  });
 
   if (error || !data) {
     throw new Error("Couldn't create room.");

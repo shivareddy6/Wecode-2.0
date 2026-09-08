@@ -307,6 +307,24 @@ export type Database = {
           user_id: string
         }[]
       }
+      create_room: {
+        Args: { p_invite_code: string }
+        Returns: {
+          closed_at: string | null
+          created_at: string
+          current_problems: Json
+          host_user_id: string
+          id: string
+          invite_code: string
+          participant_cap: number
+          round_duration_seconds: number | null
+          round_preset: string | null
+          round_started_at: string | null
+          round_status: string | null
+          status: string
+          used_leetcode_slugs: string[]
+        }
+      }
       finalize_expired_round: {
         Args: { p_room_id: string }
         Returns: undefined

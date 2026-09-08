@@ -19,9 +19,9 @@ Status is tracked here at the epic level and inside each epic file at the story 
 | 01 | [Identity & LeetCode Linking](./epics/01-identity-leetcode-linking.md) | Syncing a LeetCode session is the entire signup/login flow | Done |
 | 02 | [Browser Extension](./epics/02-browser-extension.md) | Captures the LeetCode session, sideloadable, points at prod | Done |
 | 03 | [Solo Solve Experience](./epics/03-solo-solve-experience.md) | Real problem, real editor, real LeetCode-graded verdict | Done |
-| 04 | [Rooms](./epics/04-rooms.md) | Create/join/close a room, invite links, participants | Partial — Stories 1, 2, 7 done; 3, 4, 5 not started; 6 out of scope |
+| 04 | [Rooms](./epics/04-rooms.md) | Create/join/close a room, invite links, participants | Partial — Stories 1, 2, 7 done; 3, 4, 5 not started; 6 out of scope; 8 (host transfer) is an uncommitted spike |
 | 05 | [Sessions (Contests)](./epics/05-sessions-contests.md) | Timed multi-problem rounds inside a room, random problem selection | Partial — Stories 1–4, 6, 7 done; Story 5's leaderboard-lock AC waits on Epic 06 |
-| 06 | [Leaderboard & Scoring](./epics/06-leaderboard-scoring.md) | Time + penalty scoring, live updates, resets per session | Partial — `compute_leaderboard()` exists in SQL and excludes out-of-contest submissions (Story 1); unused by any UI yet |
+| 06 | [Leaderboard & Scoring](./epics/06-leaderboard-scoring.md) | Time + penalty scoring, live updates, resets per session | Partial — Stories 1, 3, 5 done (host competes by default, per-session reset by construction, configurable constants); Story 2 has the static view but no socket push yet; Story 4 (final standings) not started |
 | 07 | [Chat](./epics/07-chat.md) | Real-time in-room text chat | Not started |
 | 08 | [Security & Abuse Prevention](./epics/08-security-abuse-prevention.md) | Encryption, rate limits, room/participant caps | Not started beyond the baseline already folded into 01/09/11 |
 | 09 | [Deployment & Ops](./epics/09-deployment-ops.md) | Vercel + Supabase, migrations, monitoring | Partial — Supabase project set up and in daily use; no Vercel deploy yet |
