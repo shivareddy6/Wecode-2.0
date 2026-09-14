@@ -1,0 +1,24 @@
+{
+  "name": "socket-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "verify": "tsx scripts/verify.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "dotenv": "^16.4.5",
+    "jose": "^5.9.6",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "socket.io-client": "^4.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5"
+  }
+}

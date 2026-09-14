@@ -58,7 +58,7 @@ As the system, I want a real Supabase Auth session provisioned per LeetCode-link
 As the system, I want a single, centralized `verifySession()` function that every Server Component, Server Action, and Route Handler calls to check who's making a request, so authorization checks can't be forgotten in one spot while present everywhere else.
 
 - Acceptance criteria:
-  - `lib/dal.ts` exports `verifySession()`, calling `supabase.auth.getUser()` (never `getSession()`, which only reads the local cookie without revalidating it against Supabase's Auth server) and memoized per request with React's `cache()`.
+  - `apps/web/lib/dal.ts` exports `verifySession()`, calling `supabase.auth.getUser()` (never `getSession()`, which only reads the local cookie without revalidating it against Supabase's Auth server) and memoized per request with React's `cache()`.
   - `verifySession()` redirects to the sync/login flow (or calls Next's `unauthorized()`) when there's no valid user — callers don't each implement their own fallback.
   - A `getCurrentUser()` built on top of it returns only the fields safe to hand to the rest of the app (name, avatar, LeetCode link status) through a DTO — never the encrypted LeetCode credential columns, even incidentally.
   - Every Server Action and Route Handler in the app calls `verifySession()` (or a room-scoped wrapper such as `verifyRoomAccess(roomId)`) as its first line, treated as a public-facing endpoint regardless of whether the calling UI already hides the action from unauthorized users.
