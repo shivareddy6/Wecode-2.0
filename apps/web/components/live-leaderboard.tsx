@@ -1,0 +1,92 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { io } from "socket.io-client";
+import { createClient } from "@/lib/supabase/client";
+
+export type LeaderboardRow = {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  total_score: number;
+  problems_solved: number;
+  last_accepted_at: string | null;
+};
+
+// Epic 06, Story 2 — layers the live push on top of the SSR'd initial
+// rows from app/rooms/[code]/leaderboard/page.tsx: same table, but a
+// socket.io connection (Epic 11) replaces the whole row set whenever the
+// server pushes a fresh compute_leaderboard() snapshot, instead of the
+// page.tsx's own periodic router.refresh() pattern used elsewhere. The
+// access token is fetched client-side (this component only ever runs in
+// the browser) since the socket handshake needs it, not a server cookie.
+export function LiveLeaderboard({
+  roomId,
+  initialRows,
+}: {
+  roomId: string;
+  initialRows: LeaderboardRow[];
+}) {
+  const [rows, setRows] = useState(initialRows);
+
+  useEffect(() => {
+    let cancelled = false;
+    let socket: ReturnType<typeof io> | undefined;
+
+    async function connect() {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || cancelled) return;
+
+      socket = io(process.env.NEXT_PUBLIC_REALTIME_SERVER_URL!, {
+        auth: { token },
+      });
+
+      // Re-joins on every "connect" (including socket.io's own
+      // auto-reconnects), not just once — a dropped/reconnected socket
+      // otherwise sits in no channel and silently stops receiving pushes.
+      socket.on("connect", () => {
+        socket?.emit("room:join", { roomId });
+      });
+
+      socket.on("leaderboard:update", (updatedRows: LeaderboardRow[]) => {
+        setRows(updatedRows);
+      });
+    }
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      socket?.disconnect();
+    };
+  }, [roomId]);
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-zinc-500">No solves yet this round.</p>;
+  }
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-black/10 text-left text-zinc-500 dark:border-white/15">
+          <th className="py-2 pr-2">#</th>
+          <th className="py-2 pr-2">Name</th>
+          <th className="py-2 pr-2 text-right">Score</th>
+          <th className="py-2 text-right">Solved</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={row.user_id} className="border-b border-black/5 dark:border-white/10">
+            <td className="py-2 pr-2 font-medium">{index + 1}</td>
+            <td className="py-2 pr-2">{row.display_name ?? "Anonymous"}</td>
+            <td className="py-2 pr-2 text-right font-mono">{row.total_score}</td>
+            <td className="py-2 text-right">{row.problems_solved}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
