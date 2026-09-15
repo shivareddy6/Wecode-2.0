@@ -51,40 +51,51 @@ export async function handleInternalRequest(
     return true;
   }
 
-  if (req.method === "POST" && url.pathname === "/internal/broadcast") {
-    const body = await readJsonBody(req);
-    const roomId = body.roomId;
-    const event = body.event;
+  // readJsonBody's JSON.parse throws on a malformed body — caught here
+  // rather than left to propagate, since the caller (index.ts) only
+  // .then()s this promise with no .catch(): an uncaught rejection here
+  // would otherwise be an unhandled rejection that crashes the whole
+  // process (Node's default since v15), taking down every room's chat
+  // and leaderboard, not just this one bad request.
+  try {
+    if (req.method === "POST" && url.pathname === "/internal/broadcast") {
+      const body = await readJsonBody(req);
+      const roomId = body.roomId;
+      const event = body.event;
 
-    if (typeof roomId !== "string" || typeof event !== "string") {
-      send(res, 400, { error: "roomId and event are required" });
+      if (typeof roomId !== "string" || typeof event !== "string") {
+        send(res, 400, { error: "roomId and event are required" });
+        return true;
+      }
+
+      io.to(roomChannel(roomId)).emit(event, body.payload);
+      send(res, 200, { ok: true });
       return true;
     }
 
-    io.to(roomChannel(roomId)).emit(event, body.payload);
-    send(res, 200, { ok: true });
-    return true;
-  }
+    if (req.method === "POST" && url.pathname === "/internal/disconnect") {
+      const body = await readJsonBody(req);
+      const roomId = body.roomId;
+      const userId = body.userId;
 
-  if (req.method === "POST" && url.pathname === "/internal/disconnect") {
-    const body = await readJsonBody(req);
-    const roomId = body.roomId;
-    const userId = body.userId;
+      if (typeof roomId !== "string" || typeof userId !== "string") {
+        send(res, 400, { error: "roomId and userId are required" });
+        return true;
+      }
 
-    if (typeof roomId !== "string" || typeof userId !== "string") {
-      send(res, 400, { error: "roomId and userId are required" });
+      const socketIds = getSocketIdsForUserInRoom(userId, roomId);
+      for (const socketId of socketIds) {
+        const socket = io.sockets.sockets.get(socketId);
+        if (!socket) continue;
+        socket.emit("room:kicked", { roomId });
+        socket.leave(roomChannel(roomId));
+      }
+
+      send(res, 200, { ok: true, disconnected: socketIds.size });
       return true;
     }
-
-    const socketIds = getSocketIdsForUserInRoom(userId, roomId);
-    for (const socketId of socketIds) {
-      const socket = io.sockets.sockets.get(socketId);
-      if (!socket) continue;
-      socket.emit("room:kicked", { roomId });
-      socket.leave(roomChannel(roomId));
-    }
-
-    send(res, 200, { ok: true, disconnected: socketIds.size });
+  } catch {
+    send(res, 400, { error: "malformed request body" });
     return true;
   }
 

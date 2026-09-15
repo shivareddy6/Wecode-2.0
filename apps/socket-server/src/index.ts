@@ -8,6 +8,7 @@ import {
   allowConnectionAttempt,
   MAX_SOCKETS_PER_USER_PER_ROOM,
   releaseRoomSlot,
+  stopConnectionLimitSweep,
   tryReserveRoomSlot,
 } from "./connectionLimits.js";
 import { rateLimited, clearEventRateLimit } from "./eventRateLimit.js";
@@ -32,12 +33,24 @@ httpServer.on("request", (req, res) => {
     return;
   }
 
-  void handleInternalRequest(req, res, io).then((handled) => {
-    if (!handled) {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "not found" }));
-    }
-  });
+  // handleInternalRequest already catches its own body-parsing errors;
+  // this .catch() is a second line of defense against anything else
+  // unexpectedly throwing in there, so a bug in this path degrades to one
+  // failed request instead of an unhandled rejection crashing the process.
+  void handleInternalRequest(req, res, io)
+    .then((handled) => {
+      if (!handled) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "not found" }));
+      }
+    })
+    .catch((error) => {
+      console.error("Unexpected error handling internal request:", error);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "internal error" }));
+      }
+    });
 });
 
 // Story 6: per-IP connect-attempt cap, checked before doing any JWT work.
@@ -150,3 +163,37 @@ io.on("connection", (socket) => {
 httpServer.listen(env.port, () => {
   console.log(`socket-server listening on :${env.port}`);
 });
+
+// A deploy (Fly.io/Railway, Epic 09 Story 5) sends SIGTERM on rolling
+// restart; without a handler, Node's default is to terminate immediately,
+// dropping in-flight HTTP requests and socket messages rather than
+// letting them finish. io.close() disconnects clients and stops the
+// engine.io server, but — per socket.io's docs — does not close an
+// httpServer it didn't create itself, so that's closed explicitly after.
+// The forced exit below is a backstop in case either close() call hangs
+// (e.g. a client that never acknowledges the disconnect).
+let shuttingDown = false;
+
+function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`${signal} received, shutting down gracefully`);
+  stopConnectionLimitSweep();
+
+  const forceExit = setTimeout(() => {
+    console.error("Graceful shutdown timed out, forcing exit");
+    process.exit(1);
+  }, 10_000);
+  forceExit.unref();
+
+  io.close(() => {
+    httpServer.close(() => {
+      clearTimeout(forceExit);
+      process.exit(0);
+    });
+  });
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

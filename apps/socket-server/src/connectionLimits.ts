@@ -10,6 +10,26 @@ export function allowConnectionAttempt(ip: string): boolean {
   return connectAttempts.consume(ip);
 }
 
+// Unlike eventRateLimit.ts's per-socket bucket (cleared on that socket's
+// own "disconnect"), an IP has no equivalent end-of-life event to hook a
+// cleanup call to — without this, connectAttempts would grow by one
+// entry per distinct IP ever seen, for the life of the process. A fully
+// idle IP refills to capacity within 10s at this bucket's rate, so a
+// 10-minute idle threshold, swept every 5 minutes, evicts long-gone IPs
+// without ever touching one that's still actually reconnecting.
+const CONNECT_ATTEMPT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+const CONNECT_ATTEMPT_MAX_IDLE_MS = 10 * 60 * 1000;
+
+const connectAttemptSweep = setInterval(() => {
+  connectAttempts.sweep(CONNECT_ATTEMPT_MAX_IDLE_MS);
+}, CONNECT_ATTEMPT_SWEEP_INTERVAL_MS);
+
+// Called from index.ts's graceful-shutdown handler so this interval
+// doesn't keep the process alive past a SIGTERM/SIGINT.
+export function stopConnectionLimitSweep(): void {
+  clearInterval(connectAttemptSweep);
+}
+
 // Per-(user, room) concurrent socket cap. Deliberately NOT a 1:1 mapping
 // to the room's participant_cap — one real participant legitimately opens
 // several sockets (multiple tabs/devices), so capping total room

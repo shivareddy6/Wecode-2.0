@@ -39,4 +39,19 @@ export class TokenBucket {
   delete(key: string): void {
     this.buckets.delete(key);
   }
+
+  // Evicts buckets untouched for `maxIdleMs`. Only needed for buckets
+  // keyed by something with no natural "done" event to hook a `delete`
+  // call to (e.g. an IP, which never "disconnects") — a bucket keyed by
+  // socket id can just call `delete()` on the socket's `disconnect` event
+  // instead and never needs this. Without it, an IP-keyed bucket grows by
+  // one entry per distinct IP ever seen, for the life of the process.
+  sweep(maxIdleMs: number): void {
+    const now = Date.now();
+    for (const [key, bucket] of this.buckets) {
+      if (now - bucket.lastRefill > maxIdleMs) {
+        this.buckets.delete(key);
+      }
+    }
+  }
 }
