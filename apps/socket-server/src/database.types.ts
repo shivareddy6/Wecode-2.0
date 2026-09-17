@@ -307,6 +307,18 @@ export type Database = {
           user_id: string
         }[]
       }
+      compute_leaderboard_breakdown: {
+        Args: { p_room_id: string }
+        Returns: {
+          attempt_count: number
+          difficulty: string
+          problem_score: number
+          problem_slug: string
+          problem_title: string
+          status: string
+          user_id: string
+        }[]
+      }
       create_room: {
         Args: { p_invite_code: string }
         Returns: {
@@ -323,6 +335,12 @@ export type Database = {
           round_status: string | null
           status: string
           used_leetcode_slugs: string[]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "rooms"
+          isOneToOne: true
+          isSetofReturn: false
         }
       }
       finalize_expired_round: {

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verify:leaderboard-push": "tsx scripts/verify-leaderboard-push.ts"
+    "verify:leaderboard-push": "tsx scripts/verify-leaderboard-push.ts",
+    "verify:leaderboard-breakdown": "tsx scripts/verify-leaderboard-breakdown.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

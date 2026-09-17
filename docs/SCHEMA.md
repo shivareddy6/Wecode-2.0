@@ -65,6 +65,8 @@ There's deliberately no `leaderboard_scores` table. `compute_leaderboard(room_id
 
 `compute_leaderboard()` also excludes every `is_out_of_contest` submission outright — both from a problem's own score and from the wrong-attempt penalty count of a later in-contest accept on the same problem — rather than filtering by timestamp itself. That's a deliberate design choice, not an oversight: filtering by the flag means the function never has to re-derive "was this in the round's window" from timestamps that could be interpreted two ways (e.g. the second the deadline hit vs. a second later); the one place that decision gets made is at insert time (`apps/web/app/api/submissions/route.ts`), same as `difficulty`.
 
+`compute_leaderboard_breakdown(room_id)` (Epic 06, Story 4) sits alongside `compute_leaderboard()` rather than replacing it — the rollup and the per-problem detail are two separate RPCs, not one function returning nested data. It cross-joins the room's `current_problems` against its roster, so it returns one row per (participant, problem) even for problems nobody's touched, with a `status` of `solved` / `solved_out_of_contest` / `not_attempted`. Unlike `compute_leaderboard()`, it does *not* drop `is_out_of_contest` accepts — Story 4's AC wants a late solve visible and clearly marked, not silently absent, so it's reported as `solved_out_of_contest` with `problem_score = 0` instead of being filtered out.
+
 The formula implemented is the **proposed default** from Epic 06, Story 1 — not a specified requirement:
 
 ```
