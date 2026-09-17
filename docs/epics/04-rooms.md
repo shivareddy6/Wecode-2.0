@@ -44,14 +44,16 @@ As a host, I want to remove a participant from my room, so I can moderate if nee
 One invariant is already enforced ahead of this story being built: since the host now holds a real, updatable `room_participants` row (see Story 1/2 above), the `"hosts can remove participants"` RLS policy's `using` clause (`20260906130000_host_is_a_participant.sql`) excludes any row whose `user_id` matches the room's current `host_user_id` — a host can never remove themself through this path, by construction, not by an app-layer check this story would otherwise need to remember to add.
 
 ### Story 5 — Close a room
-As a host, I want to close the room when the hangout is over, so it stops accepting new joins/sessions and gets archived.
+As a host, I want to close the room when the hangout is over, so it stops accepting new joins/sessions.
 
 - Acceptance criteria:
   - A closed room's invite link stops admitting new participants.
   - No new sessions can be started in a closed room.
-  - The room's history (past sessions and their final leaderboards) remains viewable to former participants after closure.
+  - Nothing about the room (chat, leaderboard, past rounds) is required to remain viewable once it's closed — closing is a hard stop, not an archival step.
 
-**Status: Not started.** Note: the third AC (viewable history after closure) conflicts with the user's own explicit call that session/round history browsing is out of scope (see Story 6) — when this gets picked up, that AC needs revisiting, not literal implementation.
+**Product decision, resolved 2026-09-17:** dropped the original "viewable history after closure" AC — it conflicted with the user's own explicit call that session/round history browsing is out of scope (Story 6), and is now explicitly superseded: closing a room doesn't need to preserve or expose anything about it afterward. This also resolves the same conflict noted on Epic 06, Story 4.
+
+**Status: Not started.**
 
 ### Story 6 — Session history within a room
 As a participant, I want to see a history of past sessions run in this room, so I can review results from earlier rounds.
