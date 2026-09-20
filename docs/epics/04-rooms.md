@@ -39,9 +39,16 @@ As a host, I want to remove a participant from my room, so I can moderate if nee
 - Acceptance criteria:
   - Removing a participant revokes their access to the room's live state (chat, active session) immediately.
 
-**Status: Not started.** The "immediately" in the AC really wants Epic 11's live sockets to force-disconnect an existing connection, not just block future page loads — worth sequencing after Epic 11 exists rather than half-delivering this now.
+**Status: Done.** `removeParticipant` (`apps/web/app/rooms/actions.ts`) is a direct table update under RLS — the same shape as `endRound` — not a new RPC: the `"hosts can remove participants"` policy already restricts it to the host and already excludes the host's own row, so there's no host/self-target logic to duplicate in the action itself. Soft-delete only (`removed_at`, not a deleted row), per `docs/SCHEMA.md`'s "Removal is soft" note.
 
-One invariant is already enforced ahead of this story being built: since the host now holds a real, updatable `room_participants` row (see Story 1/2 above), the `"hosts can remove participants"` RLS policy's `using` clause (`20260906130000_host_is_a_participant.sql`) excludes any row whose `user_id` matches the room's current `host_user_id` — a host can never remove themself through this path, by construction, not by an app-layer check this story would otherwise need to remember to add.
+Two things this story had to resolve that weren't settled going in:
+
+- **The "immediately" in the AC** — `disconnectUserFromRoom` (`apps/web/lib/realtime/broadcast.ts`) POSTs to Epic 11's `/internal/disconnect`, which emits `room:kicked` and drops the socket from the room channel right away. `LiveLeaderboard` (`apps/web/components/live-leaderboard.tsx`) — the only place in the app with an open room socket today — listens for it and redirects the removed user to `/`. Everything else (join attempts, RPCs, future page loads) is already blocked going forward the moment the DB write lands, since every room-scoped RLS policy runs through `is_room_member()`, which checks `removed_at is null`.
+- **Rejoin after removal — product decision, resolved 2026-09-17:** kicked means kicked. `join_room()` (`supabase/migrations/20260917100000_kick_participant.sql`) now explicitly rejects a caller with a `removed_at` row for that room, before falling through to the "already a member"/insert path that would otherwise hit a duplicate-key error on the `(room_id, user_id)` primary key (nothing had ever set `removed_at` before this story, so that path was dead code until now).
+
+One invariant was already enforced ahead of this story being built: since the host now holds a real, updatable `room_participants` row (see Story 1/2 above), the `"hosts can remove participants"` RLS policy's `using` clause (`20260906130000_host_is_a_participant.sql`) excludes any row whose `user_id` matches the room's current `host_user_id` — a host can never remove themself through this path, by construction, not by an app-layer check this story would otherwise need to remember to add.
+
+The participant list this needed to be usable (a host has to pick *someone* to remove) is a minimal, host-only, non-live roster rendered directly in `apps/web/app/rooms/[code]/page.tsx` — not the full live-updating list Story 3 asks for. Verified end-to-end via `npm run verify:kick-participant -w web` (7/7): the DB write, the host-can't-remove-self RLS guard, the live socket disconnect, the rejoin block, and that a bystander is unaffected.
 
 ### Story 5 — Close a room
 As a host, I want to close the room when the hangout is over, so it stops accepting new joins/sessions.

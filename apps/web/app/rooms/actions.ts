@@ -6,6 +6,7 @@ import { refresh } from "next/cache";
 import { verifySession, verifyRoomAccess, lookupRoomForJoin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { isRoundPreset, selectRoundProblems } from "@/lib/problems/round-selection";
+import { disconnectUserFromRoom } from "@/lib/realtime/broadcast";
 
 function generateInviteCode(): string {
   return randomBytes(6).toString("base64url");
@@ -178,5 +179,61 @@ export async function endRound(formData: FormData) {
   // No redirect() here (unlike startRound/createRoom) — the host stays on
   // the room page, so the mutation needs an explicit refresh() (Next 16's
   // next/cache API) for the now-ended round_status to actually show up.
+  refresh();
+}
+
+// Epic 04, Story 4 — host removes a participant. A direct table update
+// under RLS, the same shape as endRound above, not a new RPC: the
+// "hosts can remove participants" policy (host_is_a_participant
+// migration) already restricts this update to the host and already
+// excludes the host's own row, so there's no host/self-target logic to
+// duplicate here — an attempt to target the host (or by a non-host
+// caller) just matches zero rows at the DB layer.
+//
+// Soft-delete only (removed_at, not a deleted row) — see docs/SCHEMA.md's
+// "Removal is soft" note: chat and leaderboard history stay attributable
+// to a real person after a kick. join_room() (kick_participant migration)
+// separately rejects any future rejoin attempt from this user for this
+// room, per the 2026-09-17 product decision that kicked means kicked.
+//
+// The DB write alone already revokes access going forward (every
+// room-scoped RLS policy runs through is_room_member(), which checks
+// removed_at is null) — disconnectUserFromRoom is the "immediately" part
+// of the AC, forcing any socket connection this user already has open
+// (e.g. a leaderboard tab) to leave the room channel right now instead
+// of waiting for its next natural reconnect.
+export async function removeParticipant(formData: FormData) {
+  const roomId = formData.get("roomId");
+  const targetUserId = formData.get("userId");
+
+  if (typeof roomId !== "string" || typeof targetUserId !== "string") {
+    throw new Error("Missing roomId or userId.");
+  }
+
+  const { isHost } = await verifyRoomAccess(roomId);
+  if (!isHost) {
+    throw new Error("Only the host can remove a participant.");
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("room_participants")
+    .update({ removed_at: new Date().toISOString() })
+    .eq("room_id", roomId)
+    .eq("user_id", targetUserId)
+    .is("removed_at", null)
+    .select("user_id");
+
+  if (error) {
+    throw new Error("Couldn't remove that participant. Try again.");
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error("That participant isn't in this room (or can't be removed).");
+  }
+
+  await disconnectUserFromRoom(roomId, targetUserId);
+
+  // No redirect() — the host stays on the room page, same as endRound.
   refresh();
 }

@@ -4,7 +4,7 @@ import { lookupRoomForJoin, resolveRoomIdByCode, verifyRoomAccess } from "@/lib/
 import { createClient } from "@/lib/supabase/server";
 import { ROUND_PRESETS } from "@/lib/problems/round-selection";
 import { computeRoundDeadline, isPastDeadline } from "@/lib/rounds/deadline";
-import { startRound, joinRoom, endRound } from "@/app/rooms/actions";
+import { startRound, joinRoom, endRound, removeParticipant } from "@/app/rooms/actions";
 import { LeetCodeSyncForm } from "@/components/leetcode-sync-form";
 import { RoundCountdown } from "@/components/round-countdown";
 
@@ -12,13 +12,14 @@ type CurrentProblem = { slug: string; title: string; difficulty: "easy" | "mediu
 
 const DEFAULT_DURATION_MINUTES = 30;
 
-// Epic 04, Story 1/2/3/6 + Epic 05, Story 1/2/3/6/7 (real pass) — room
+// Epic 04, Story 1/2/4/6 + Epic 05, Story 1/2/3/6/7 (real pass) — room
 // info, joining, and, for the host, starting/ending a round with a real
 // preset + duration + random selection instead of the old single-slug
 // dropdown. Addressed by the room's short invite_code, not its internal
-// UUID (see docs/SCHEMA.md — the room-centric-rounds design). No live
-// participant list or moderation yet — those are Epic 04, Stories 3/4/5,
-// not touched by this pass. No session history list either: a room has
+// UUID (see docs/SCHEMA.md — the room-centric-rounds design). The
+// participant list rendered below is host-only and just enough to remove
+// someone by (Story 4) — a full live-updating roster for everyone is
+// Story 3, still not started. No session history list either: a room has
 // exactly one current round, not a growing list of past ones.
 export default async function RoomPage({
   params,
@@ -75,6 +76,19 @@ export default async function RoomPage({
     .single();
 
   const currentProblems = (room?.current_problems ?? []) as CurrentProblem[];
+
+  // Epic 04, Story 4 — just enough of a roster to kick someone by; the
+  // full live-updating participant list is Story 3 (not started). Fetched
+  // host-only since that's the only role that needs it right now.
+  const participants = isHost
+    ? (
+        await supabase
+          .from("room_participants")
+          .select("user_id, users(display_name)")
+          .eq("room_id", roomId)
+          .is("removed_at", null)
+      ).data ?? []
+    : [];
 
   // Epic 05, Story 5 — nothing pushes a round's timer expiring; it's
   // detected here (or in app/api/submissions/route.ts, on a late attempt)
@@ -154,6 +168,41 @@ export default async function RoomPage({
               </button>
             </form>
           ) : null}
+        </div>
+      ) : null}
+
+      {isHost ? (
+        <div>
+          <h2 className="mb-2 text-sm font-medium">Participants</h2>
+          <ul className="flex flex-col gap-1">
+            {participants.map((participant) => {
+              const userRow = Array.isArray(participant.users)
+                ? participant.users[0]
+                : participant.users;
+              const isSelf = participant.user_id === authData.user.id;
+
+              return (
+                <li
+                  key={participant.user_id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span>{userRow?.display_name ?? "Anonymous"}</span>
+                  {isSelf ? null : (
+                    <form action={removeParticipant}>
+                      <input type="hidden" name="roomId" value={roomId} />
+                      <input type="hidden" name="userId" value={participant.user_id} />
+                      <button
+                        type="submit"
+                        className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium dark:border-white/15"
+                      >
+                        Remove
+                      </button>
+                    </form>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
 

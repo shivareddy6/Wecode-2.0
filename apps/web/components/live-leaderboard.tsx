@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import { createClient } from "@/lib/supabase/client";
 
@@ -28,6 +29,7 @@ export function LiveLeaderboard({
   initialRows: LeaderboardRow[];
 }) {
   const [rows, setRows] = useState(initialRows);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +55,16 @@ export function LiveLeaderboard({
       socket.on("leaderboard:update", (updatedRows: LeaderboardRow[]) => {
         setRows(updatedRows);
       });
+
+      // Epic 04, Story 4 — the socket server's /internal/disconnect
+      // handler emits this and makes the socket leave the room channel
+      // right when a host kicks someone; this is the only place in the
+      // app with an open room socket today, so it's the one spot that can
+      // react to it live instead of the removed user just sitting on a
+      // stale leaderboard until their next page load.
+      socket.on("room:kicked", () => {
+        router.push("/");
+      });
     }
 
     void connect();
@@ -61,7 +73,7 @@ export function LiveLeaderboard({
       cancelled = true;
       socket?.disconnect();
     };
-  }, [roomId]);
+  }, [roomId, router]);
 
   if (rows.length === 0) {
     return <p className="text-sm text-zinc-500">No solves yet this round.</p>;

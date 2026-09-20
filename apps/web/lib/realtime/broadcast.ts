@@ -39,3 +39,40 @@ export async function broadcastToRoom(
     console.error("broadcastToRoom: failed to reach realtime server", error);
   }
 }
+
+// Epic 04, Story 4 — the live half of a kick: the DB write
+// (room_participants.removed_at) already blocks the removed user from
+// anything they'd load or join going forward, via RLS's is_room_member;
+// this forces any *already-open* socket (e.g. a leaderboard tab) to leave
+// the room channel right away, instead of waiting for that tab's next
+// natural reconnect/refresh to notice. Same "failures are swallowed"
+// posture as broadcastToRoom — a missed disconnect just means that one
+// open tab keeps receiving pushes until it naturally reconnects, not a
+// broken removal (the DB write, which is the part that actually revokes
+// access, already succeeded by the time this runs).
+export async function disconnectUserFromRoom(roomId: string, userId: string): Promise<void> {
+  const url = process.env.REALTIME_SERVER_URL;
+  const secret = process.env.REALTIME_INTERNAL_SECRET;
+
+  if (!url || !secret) {
+    console.error("disconnectUserFromRoom: REALTIME_SERVER_URL/REALTIME_INTERNAL_SECRET not configured");
+    return;
+  }
+
+  try {
+    const response = await fetch(`${url}/internal/disconnect`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": secret,
+      },
+      body: JSON.stringify({ roomId, userId }),
+    });
+
+    if (!response.ok) {
+      console.error(`disconnectUserFromRoom: realtime server responded ${response.status}`);
+    }
+  } catch (error) {
+    console.error("disconnectUserFromRoom: failed to reach realtime server", error);
+  }
+}
