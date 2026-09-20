@@ -31,7 +31,11 @@ As a host, I want to see who's currently in my room, so I know who's present.
 - Acceptance criteria:
   - The room view lists current participants, live-updating as people join/leave.
 
-**Status: Not started.**
+**Status: Done.** The roster is now visible to every member, not just the host — `ParticipantList` (`apps/web/components/participant-list.tsx`) renders in `apps/web/app/rooms/[code]/page.tsx` for all members, same visibility model as the leaderboard, layered on top of the SSR'd initial roster the same way `LiveLeaderboard` (Epic 06, Story 2) layers over the leaderboard's initial rows: a socket.io connection replaces the whole row set on every pushed `"participants:update"`.
+
+The broadcast is pushed from the two places that actually change the roster — `joinRoom` and `removeParticipant` (`apps/web/app/rooms/actions.ts`) — the same "write, then broadcast on the same request" shape Epic 06 Story 2 established for the leaderboard. One thing this needed that Story 4's `join_room()` didn't already provide: `joinRoom` is called on *every* room-page render (including the 5-second refresh poll during an active round), not just an actual first-time join, and broadcasting a fresh roster on every no-op call would spam every open socket with an unchanged payload. Fixed by having `join_room()` (`supabase/migrations/20260920100000_join_room_reports_insert.sql`) return `true` only when it actually inserted a row — `false` for the ordinary "already a member" no-op — so `joinRoom` only broadcasts when the roster really changed.
+
+Verified end-to-end via `npm run verify:participant-list -w web` (6/6): `join_room()`'s true/false return value on a real join vs. a repeat no-op call, a real join's socket push landing with both members, and a kick's socket push landing with the kicked member gone.
 
 ### Story 4 — Remove a participant
 As a host, I want to remove a participant from my room, so I can moderate if needed.
@@ -60,7 +64,13 @@ As a host, I want to close the room when the hangout is over, so it stops accept
 
 **Product decision, resolved 2026-09-17:** dropped the original "viewable history after closure" AC — it conflicted with the user's own explicit call that session/round history browsing is out of scope (Story 6), and is now explicitly superseded: closing a room doesn't need to preserve or expose anything about it afterward. This also resolves the same conflict noted on Epic 06, Story 4.
 
-**Status: Not started.**
+**Status: Done.** `closeRoom` (`apps/web/app/rooms/actions.ts`) is a direct table update under RLS — the same shape as `endRound`/`removeParticipant`, no new RPC — flipping `rooms.status` from `'open'` to `'closed'` and stamping `closed_at`. The `"hosts manage their own rooms"` RLS policy already restricts this update to the host, and the `.eq("status", "open")` filter makes a second close attempt a harmless no-op rather than re-stamping `closed_at`.
+
+The two enforcement points the AC needs already existed on one side and were missing on the other: `join_room()` has rejected joins to a non-open room since Story 2, but `start_room_round()` never checked room status at all — a closed room's host could still start a brand new round. Fixed by adding that guard (`supabase/migrations/20260920110000_close_room.sql`), ahead of the existing host-only check. Deliberately untouched, per the AC's own "hard stop, not an archival step" line: existing read access to the room's current round/leaderboard/chat for people already in it — `is_room_member()`/`is_room_host()` only ever check `removed_at`, never `rooms.status`.
+
+The room page hides the start-round/end-round/close-room controls once `room.status !== 'open'`, but existing members keep reading everything else about the room unchanged.
+
+Verified end-to-end via `npm run verify:close-room -w web` (6/6): a non-host can't close the room, the host's close write lands and is idempotent, a new participant is rejected on join, `start_room_round` is rejected, and an existing member retains read access afterward.
 
 ### Story 6 — Session history within a room
 As a participant, I want to see a history of past sessions run in this room, so I can review results from earlier rounds.

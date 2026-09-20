@@ -9,7 +9,9 @@
     "lint": "eslint",
     "verify:leaderboard-push": "tsx scripts/verify-leaderboard-push.ts",
     "verify:leaderboard-breakdown": "tsx scripts/verify-leaderboard-breakdown.ts",
-    "verify:kick-participant": "tsx scripts/verify-kick-participant.ts"
+    "verify:kick-participant": "tsx scripts/verify-kick-participant.ts",
+    "verify:participant-list": "tsx scripts/verify-participant-list.ts",
+    "verify:close-room": "tsx scripts/verify-close-room.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

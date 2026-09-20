@@ -6,7 +6,31 @@ import { refresh } from "next/cache";
 import { verifySession, verifyRoomAccess, lookupRoomForJoin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { isRoundPreset, selectRoundProblems } from "@/lib/problems/round-selection";
-import { disconnectUserFromRoom } from "@/lib/realtime/broadcast";
+import { broadcastToRoom, disconnectUserFromRoom } from "@/lib/realtime/broadcast";
+
+type ParticipantRow = { user_id: string; display_name: string | null };
+
+// Epic 04, Story 3 — recomputes the active roster and pushes it over
+// Epic 11's socket channel, the same "write, then broadcast on the same
+// request" shape as Epic 06 Story 2's leaderboard push. Called from
+// joinRoom/removeParticipant only when the roster actually changed, not
+// on every no-op call — see join_room()'s comment on why it now reports
+// back whether it inserted a row.
+async function broadcastParticipantList(roomId: string): Promise<void> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("room_participants")
+    .select("user_id, users(display_name)")
+    .eq("room_id", roomId)
+    .is("removed_at", null);
+
+  const rows: ParticipantRow[] = (data ?? []).map((row) => {
+    const user = Array.isArray(row.users) ? row.users[0] : row.users;
+    return { user_id: row.user_id, display_name: user?.display_name ?? null };
+  });
+
+  await broadcastToRoom(roomId, "participants:update", rows);
+}
 
 function generateInviteCode(): string {
   return randomBytes(6).toString("base64url");
@@ -63,10 +87,17 @@ export async function joinRoom(code: string) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc("join_room", { p_room_id: room.id });
+  const { data: didJoin, error } = await supabase.rpc("join_room", { p_room_id: room.id });
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  // join_room() returns true only for an actual new insert, false for the
+  // ordinary "already a member" no-op this gets called with on every page
+  // render — only broadcast when the roster really changed.
+  if (didJoin) {
+    await broadcastParticipantList(room.id);
   }
 }
 
@@ -233,6 +264,42 @@ export async function removeParticipant(formData: FormData) {
   }
 
   await disconnectUserFromRoom(roomId, targetUserId);
+  await broadcastParticipantList(roomId);
+
+  // No redirect() — the host stays on the room page, same as endRound.
+  refresh();
+}
+
+// Epic 04, Story 5 — host closes the room: a hard stop on new joins and
+// new rounds, not an archival step (per the AC's own "nothing about the
+// room is required to remain viewable once closed" line). A direct
+// table update under RLS, the same shape as endRound/removeParticipant —
+// no new RPC needed. The two enforcement points already exist elsewhere,
+// not here: join_room() has rejected non-open rooms since Story 2, and
+// start_room_round() gained the same status check alongside this story
+// (close_room migration). This action only ever needs to flip the flag.
+export async function closeRoom(formData: FormData) {
+  const roomId = formData.get("roomId");
+
+  if (typeof roomId !== "string") {
+    throw new Error("Missing roomId.");
+  }
+
+  const { isHost } = await verifyRoomAccess(roomId);
+  if (!isHost) {
+    throw new Error("Only the host can close the room.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("rooms")
+    .update({ status: "closed", closed_at: new Date().toISOString() })
+    .eq("id", roomId)
+    .eq("status", "open");
+
+  if (error) {
+    throw new Error("Couldn't close the room. Try again.");
+  }
 
   // No redirect() — the host stays on the room page, same as endRound.
   refresh();
