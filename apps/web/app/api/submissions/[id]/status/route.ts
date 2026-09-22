@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifySession } from "@/lib/dal";
+import { verifySession, getCurrentUser } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { getDecryptedLeetCodeCredentials } from "@/lib/leetcode/credentials";
 import { checkSubmissionStatus } from "@/lib/leetcode/client";
@@ -21,7 +21,7 @@ export async function GET(
 
   const { data: submission } = await supabase
     .from("submissions")
-    .select("leetcode_submission_id, room_id")
+    .select("leetcode_submission_id, room_id, problem_slug, difficulty, is_out_of_contest")
     .eq("id", id)
     .maybeSingle();
 
@@ -67,6 +67,57 @@ export async function GET(
       p_room_id: submission.room_id,
     });
     await broadcastToRoom(submission.room_id, "leaderboard:update", rows ?? []);
+
+    // Epic 07, Story 5 — a system-style chat entry for this submission,
+    // attributed to the submitter but kind: "submission" (chat_submission_
+    // activity migration) so components/chat.tsx renders it distinctly
+    // from a typed message, with is_out_of_contest denormalized straight
+    // from the submission row for the "visibly marked" half of the AC.
+    // Looked up via current_problems rather than a stored title, since
+    // submissions only ever carries problem_slug/difficulty; falls back to
+    // the slug itself if the round has already moved on by the time this
+    // judges (current_problems is wholesale-replaced every round).
+    const { data: room } = await supabase
+      .from("rooms")
+      .select("current_problems")
+      .eq("id", submission.room_id)
+      .single();
+    const currentProblems = (room?.current_problems ?? []) as Array<{ slug: string; title: string }>;
+    const problemTitle =
+      currentProblems.find((problem) => problem.slug === submission.problem_slug)?.title ??
+      submission.problem_slug;
+
+    const submitter = await getCurrentUser();
+    const activityBody =
+      status.statusMessage === "Accepted"
+        ? `${submitter.displayName ?? "Someone"} solved ${problemTitle} (${submission.difficulty})`
+        : `${submitter.displayName ?? "Someone"} attempted ${problemTitle} — ${status.statusMessage}`;
+
+    const { data: chatMessage, error: chatError } = await supabase
+      .from("chat_messages")
+      .insert({
+        room_id: submission.room_id,
+        user_id: user.id,
+        body: activityBody,
+        kind: "submission",
+        is_out_of_contest: submission.is_out_of_contest,
+      })
+      .select("id, room_id, user_id, body, created_at, kind, is_out_of_contest")
+      .single();
+
+    if (!chatError && chatMessage) {
+      await broadcastToRoom(submission.room_id, "chat:message", {
+        id: chatMessage.id,
+        room_id: chatMessage.room_id,
+        user_id: chatMessage.user_id,
+        body: chatMessage.body,
+        created_at: chatMessage.created_at,
+        kind: chatMessage.kind,
+        is_out_of_contest: chatMessage.is_out_of_contest,
+        display_name: submitter.displayName,
+        avatar_url: submitter.avatarUrl,
+      });
+    }
   }
 
   return NextResponse.json({

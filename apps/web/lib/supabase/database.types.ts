@@ -23,6 +23,8 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           id: string
+          is_out_of_contest: boolean
+          kind: string
           room_id: string
           user_id: string
         }
@@ -31,6 +33,8 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          is_out_of_contest?: boolean
+          kind?: string
           room_id: string
           user_id: string
         }
@@ -39,6 +43,8 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          is_out_of_contest?: boolean
+          kind?: string
           room_id?: string
           user_id?: string
         }
@@ -349,7 +355,7 @@ export type Database = {
       }
       is_room_host: { Args: { p_room_id: string }; Returns: boolean }
       is_room_member: { Args: { p_room_id: string }; Returns: boolean }
-      join_room: { Args: { p_room_id: string }; Returns: undefined }
+      join_room: { Args: { p_room_id: string }; Returns: boolean }
       start_room_round: {
         Args: {
           p_duration_seconds: number

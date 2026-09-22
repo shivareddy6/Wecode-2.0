@@ -40,7 +40,7 @@ A room is a persistent group; a round (what used to be modeled as a `sessions` r
 
 The tell that this isn't just "deleting history for its own sake": `user_credentials` in this same schema *is* modeled as genuinely one-to-one with `users` (`user_id` as its own primary key, no surrogate id, because a user only ever has exactly one credentials row, replaced in place). Rounds aren't that — they're a real one-to-many relationship over a room's lifetime — but *retaining* that history was never required by anything actually being built, so the schema doesn't carry it.
 
-**`chat_messages`** — room-scoped, soft-deletable (`deleted_at`) so a host can moderate (Epic 07, Story 3) without destroying the row outright.
+**`chat_messages`** — room-scoped, soft-deletable (`deleted_at`) so a host can moderate (Epic 07, Story 3) without destroying the row outright. `kind` (`'user' | 'submission'`, default `'user'`) and `is_out_of_contest` (default `false`) were added for Epic 07, Story 5: a submission-activity entry has to be a real, persisted row here — not something computed at render time from `submissions`, which gets wiped on every `start_room_round()` while chat survives round transitions — and needs a real column to drive its distinct rendering rather than the app parsing the body text.
 
 **`scoring_config`** — the tunable constants the leaderboard formula reads (base points per difficulty, the decay floor percentage, the wrong-submission penalty). Editable by updating rows, not by redeploying code (Epic 06, Story 5). Seeded with the proposed defaults from the PRD: 100/200/300 base points for easy/medium/hard, a 30% decay floor, a 10-point penalty per wrong submission.
 

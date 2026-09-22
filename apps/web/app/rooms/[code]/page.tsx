@@ -8,6 +8,7 @@ import { startRound, joinRoom, endRound, closeRoom } from "@/app/rooms/actions";
 import { LeetCodeSyncForm } from "@/components/leetcode-sync-form";
 import { RoundCountdown } from "@/components/round-countdown";
 import { ParticipantList } from "@/components/participant-list";
+import { Chat } from "@/components/chat";
 
 type CurrentProblem = { slug: string; title: string; difficulty: "easy" | "medium" | "hard" };
 
@@ -90,6 +91,37 @@ export default async function RoomPage({
     const user = Array.isArray(row.users) ? row.users[0] : row.users;
     return { user_id: row.user_id, display_name: user?.display_name ?? null };
   });
+
+  // Epic 07, Story 1 — chat history so far, visible to anyone landing on
+  // the room later (spans rounds, unlike current_problems — see
+  // docs/SCHEMA.md's "Chat spans rounds regardless" note). Soft-deleted
+  // rows (Story 3) are excluded here the same way a removed participant is
+  // excluded from the roster above. Capped at the most recent 100 — this is
+  // a casual friends tool, not a paginated archive.
+  const CHAT_HISTORY_LIMIT = 100;
+  const { data: chatRows } = await supabase
+    .from("chat_messages")
+    .select("id, user_id, body, created_at, kind, is_out_of_contest, users(display_name, avatar_url)")
+    .eq("room_id", roomId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(CHAT_HISTORY_LIMIT);
+
+  const chatMessages = (chatRows ?? [])
+    .map((row) => {
+      const user = Array.isArray(row.users) ? row.users[0] : row.users;
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        display_name: user?.display_name ?? null,
+        avatar_url: user?.avatar_url ?? null,
+        body: row.body,
+        created_at: row.created_at,
+        kind: row.kind as "user" | "submission",
+        is_out_of_contest: row.is_out_of_contest,
+      };
+    })
+    .reverse();
 
   // Epic 05, Story 5 — nothing pushes a round's timer expiring; it's
   // detected here (or in app/api/submissions/route.ts, on a late attempt)
@@ -214,6 +246,8 @@ export default async function RoomPage({
           <p className="text-sm text-zinc-500">No round started yet.</p>
         )}
       </div>
+
+      <Chat roomId={roomId} initialMessages={chatMessages} isHost={isHost} />
     </main>
   );
 }

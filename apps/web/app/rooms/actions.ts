@@ -7,6 +7,7 @@ import { verifySession, verifyRoomAccess, lookupRoomForJoin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { isRoundPreset, selectRoundProblems } from "@/lib/problems/round-selection";
 import { broadcastToRoom, disconnectUserFromRoom } from "@/lib/realtime/broadcast";
+import { MAX_MESSAGE_LENGTH } from "@/lib/chat/constants";
 
 type ParticipantRow = { user_id: string; display_name: string | null };
 
@@ -303,4 +304,100 @@ export async function closeRoom(formData: FormData) {
 
   // No redirect() — the host stays on the room page, same as endRound.
   refresh();
+}
+
+// Epic 07, Story 1/2/4 — post a chat message. No refresh() here: unlike
+// the host-only mutations above, the sender already has an open room
+// socket (components/chat.tsx) and gets their own message back the same
+// way everyone else does, via the "chat:message" broadcast below — a
+// second, redundant page refresh would just fight that.
+//
+// Length/emptiness are checked here even though chat_messages already has
+// a `char_length(body) <= 2000` constraint, so a bad message fails with a
+// readable error instead of a raw Postgres constraint violation. Sanitizing
+// against HTML execution (Story 4) needs no code here: the body is stored
+// as plain text and every render path (this table's only consumer,
+// components/chat.tsx) uses ordinary JSX text interpolation, which React
+// escapes by default — never dangerouslySetInnerHTML.
+export async function sendMessage(formData: FormData) {
+  const roomId = formData.get("roomId");
+  const bodyRaw = formData.get("body");
+
+  if (typeof roomId !== "string" || typeof bodyRaw !== "string") {
+    throw new Error("Missing roomId or body.");
+  }
+
+  const body = bodyRaw.trim();
+  if (body.length === 0) {
+    throw new Error("Message can't be empty.");
+  }
+  if (body.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`);
+  }
+
+  const { user } = await verifyRoomAccess(roomId);
+
+  const supabase = await createClient();
+  const { data: message, error } = await supabase
+    .from("chat_messages")
+    .insert({ room_id: roomId, user_id: user.id, body })
+    .select("id, room_id, user_id, body, created_at, kind, is_out_of_contest, users(display_name, avatar_url)")
+    .single();
+
+  if (error || !message) {
+    throw new Error("Couldn't send that message. Try again.");
+  }
+
+  const sender = Array.isArray(message.users) ? message.users[0] : message.users;
+
+  await broadcastToRoom(roomId, "chat:message", {
+    id: message.id,
+    room_id: message.room_id,
+    user_id: message.user_id,
+    body: message.body,
+    created_at: message.created_at,
+    kind: message.kind,
+    is_out_of_contest: message.is_out_of_contest,
+    display_name: sender?.display_name ?? null,
+    avatar_url: sender?.avatar_url ?? null,
+  });
+}
+
+// Epic 07, Story 3 — host-only moderation: delete any message in their
+// room. A soft-delete (deleted_at), same shape as removeParticipant's
+// removed_at, not a hard delete — the "message owner or host can
+// soft-delete" RLS policy (v2_schema migration) also permits the message's
+// own author, but nothing in the app exposes that yet since the epic's AC
+// only calls for host moderation; the RLS policy already being broader than
+// what's wired up here isn't a gap to fix, just unused headroom.
+export async function deleteMessage(formData: FormData) {
+  const roomId = formData.get("roomId");
+  const messageId = formData.get("messageId");
+
+  if (typeof roomId !== "string" || typeof messageId !== "string") {
+    throw new Error("Missing roomId or messageId.");
+  }
+
+  const { isHost } = await verifyRoomAccess(roomId);
+  if (!isHost) {
+    throw new Error("Only the host can delete a message.");
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", messageId)
+    .eq("room_id", roomId)
+    .is("deleted_at", null)
+    .select("id");
+
+  if (error) {
+    throw new Error("Couldn't delete that message. Try again.");
+  }
+  if (!data || data.length === 0) {
+    throw new Error("That message doesn't exist in this room (or was already deleted).");
+  }
+
+  await broadcastToRoom(roomId, "chat:delete", { id: messageId });
 }
