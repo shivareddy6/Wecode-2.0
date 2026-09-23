@@ -307,6 +307,7 @@ export type Database = {
         Returns: {
           avatar_url: string
           display_name: string
+          is_removed: boolean
           last_accepted_at: string
           problems_solved: number
           total_score: number
@@ -318,6 +319,7 @@ export type Database = {
         Returns: {
           attempt_count: number
           difficulty: string
+          is_removed: boolean
           problem_score: number
           problem_slug: string
           problem_title: string

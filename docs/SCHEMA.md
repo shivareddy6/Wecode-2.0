@@ -67,6 +67,8 @@ There's deliberately no `leaderboard_scores` table. `compute_leaderboard(room_id
 
 `compute_leaderboard_breakdown(room_id)` (Epic 06, Story 4) sits alongside `compute_leaderboard()` rather than replacing it — the rollup and the per-problem detail are two separate RPCs, not one function returning nested data. It cross-joins the room's `current_problems` against its roster, so it returns one row per (participant, problem) even for problems nobody's touched, with a `status` of `solved` / `solved_out_of_contest` / `not_attempted`. Unlike `compute_leaderboard()`, it does *not* drop `is_out_of_contest` accepts — Story 4's AC wants a late solve visible and clearly marked, not silently absent, so it's reported as `solved_out_of_contest` with `problem_score = 0` instead of being filtered out.
 
+Both functions' roster now includes every participant a room has ever had, not just currently-active ones (`is_removed` output column, `leaderboard_includes_removed` migration, 2026-09-23) — reconciling an inconsistency where a kicked participant's score/breakdown history vanished from the leaderboard even though this doc already promised removal is soft "so chat and leaderboard history stay attributable to a real person even after a host kicks them" (see `room_participants` below). Same "visible, not hidden" precedent as `solved_out_of_contest`.
+
 The formula implemented is the **proposed default** from Epic 06, Story 1 — not a specified requirement:
 
 ```

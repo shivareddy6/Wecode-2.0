@@ -12,7 +12,9 @@
     "verify:kick-participant": "tsx scripts/verify-kick-participant.ts",
     "verify:participant-list": "tsx scripts/verify-participant-list.ts",
     "verify:close-room": "tsx scripts/verify-close-room.ts",
-    "verify:chat": "tsx scripts/verify-chat.ts"
+    "verify:chat": "tsx scripts/verify-chat.ts",
+    "verify:transfer-host": "tsx scripts/verify-transfer-host.ts",
+    "verify:leaderboard-kicked-history": "tsx scripts/verify-leaderboard-kicked-history.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

@@ -12,6 +12,7 @@ export type LeaderboardRow = {
   total_score: number;
   problems_solved: number;
   last_accepted_at: string | null;
+  is_removed: boolean;
 };
 
 // Epic 06, Story 2 — layers the live push on top of the SSR'd initial
@@ -93,7 +94,12 @@ export function LiveLeaderboard({
         {rows.map((row, index) => (
           <tr key={row.user_id} className="border-b border-black/5 dark:border-white/10">
             <td className="py-2 pr-2 font-medium">{index + 1}</td>
-            <td className="py-2 pr-2">{row.display_name ?? "Anonymous"}</td>
+            <td className="py-2 pr-2">
+              {row.display_name ?? "Anonymous"}
+              {row.is_removed ? (
+                <span className="ml-1 text-xs text-zinc-500">(removed)</span>
+              ) : null}
+            </td>
             <td className="py-2 pr-2 text-right font-mono">{row.total_score}</td>
             <td className="py-2 text-right">{row.problems_solved}</td>
           </tr>

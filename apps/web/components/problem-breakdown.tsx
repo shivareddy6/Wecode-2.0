@@ -6,6 +6,7 @@ export type BreakdownRow = {
   status: "solved" | "solved_out_of_contest" | "not_attempted";
   problem_score: number;
   attempt_count: number;
+  is_removed: boolean;
 };
 
 function statusLabel(row: BreakdownRow): string {
@@ -49,10 +50,13 @@ export function ProblemBreakdown({
         const problemRows = byUser.get(userId);
         if (!problemRows) return null;
 
+        const isRemoved = problemRows[0]?.is_removed ?? false;
+
         return (
           <div key={userId} className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">
               {displayNames[userId] ?? "Anonymous"}
+              {isRemoved ? <span className="ml-1 text-xs text-zinc-500">(removed)</span> : null}
             </h3>
             <table className="w-full text-sm">
               <thead>
