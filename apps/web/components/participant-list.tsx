@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { createClient } from "@/lib/supabase/client";
-import { removeParticipant } from "@/app/rooms/actions";
+import { removeParticipant, transferHost } from "@/app/rooms/actions";
 
 export type ParticipantRow = { user_id: string; display_name: string | null };
 
@@ -20,11 +20,13 @@ export function ParticipantList({
   initialParticipants,
   isHost,
   viewerId,
+  hostUserId,
 }: {
   roomId: string;
   initialParticipants: ParticipantRow[];
   isHost: boolean;
   viewerId: string;
+  hostUserId: string;
 }) {
   const [participants, setParticipants] = useState(initialParticipants);
 
@@ -66,20 +68,39 @@ export function ParticipantList({
         {participants.map((participant) => {
           const isSelf = participant.user_id === viewerId;
 
+          const isCurrentHost = participant.user_id === hostUserId;
+
           return (
             <li key={participant.user_id} className="flex items-center justify-between text-sm">
-              <span>{participant.display_name ?? "Anonymous"}</span>
+              <span>
+                {participant.display_name ?? "Anonymous"}
+                {isCurrentHost ? " (Host)" : null}
+              </span>
               {isHost && !isSelf ? (
-                <form action={removeParticipant}>
-                  <input type="hidden" name="roomId" value={roomId} />
-                  <input type="hidden" name="userId" value={participant.user_id} />
-                  <button
-                    type="submit"
-                    className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium dark:border-white/15"
-                  >
-                    Remove
-                  </button>
-                </form>
+                <div className="flex gap-2">
+                  {!isCurrentHost ? (
+                    <form action={transferHost}>
+                      <input type="hidden" name="roomId" value={roomId} />
+                      <input type="hidden" name="userId" value={participant.user_id} />
+                      <button
+                        type="submit"
+                        className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium dark:border-white/15"
+                      >
+                        Make host
+                      </button>
+                    </form>
+                  ) : null}
+                  <form action={removeParticipant}>
+                    <input type="hidden" name="roomId" value={roomId} />
+                    <input type="hidden" name="userId" value={participant.user_id} />
+                    <button
+                      type="submit"
+                      className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium dark:border-white/15"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </div>
               ) : null}
             </li>
           );

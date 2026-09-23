@@ -306,6 +306,64 @@ export async function closeRoom(formData: FormData) {
   refresh();
 }
 
+// Epic 04, Story 8 — host transfers host powers to another current
+// participant. A direct rooms.host_user_id update under RLS, no new RPC —
+// same "no new SQL function" shape as endRound/closeRoom/removeParticipant.
+// The RLS side of this (transfer_host migration) is the part that actually
+// had to change: the pre-existing "hosts manage their own rooms" policy had
+// no explicit WITH CHECK, which defaults to the USING clause — meaning the
+// post-update row's host_user_id had to still equal auth.uid(), so it was
+// physically impossible to move host_user_id to someone else before that
+// migration widened WITH CHECK to also allow the new value to be any other
+// active participant of the room.
+//
+// Confirmed design choices (2026-09-23): unilateral, no accept step from the
+// new host; allowed at any time, including mid-round, since host powers are
+// just single atomic writes gated on host_user_id — nothing about an active
+// round needs the acting host to stay fixed; and this only hands off power,
+// it doesn't remove the outgoing host from the room (they keep their
+// room_participants row, leaderboard standing, and chat presence untouched
+// — a separate "leave the room" action for any participant, host or not,
+// remains a distinct, still-open gap).
+export async function transferHost(formData: FormData) {
+  const roomId = formData.get("roomId");
+  const newHostUserId = formData.get("userId");
+
+  if (typeof roomId !== "string" || typeof newHostUserId !== "string") {
+    throw new Error("Missing roomId or userId.");
+  }
+
+  const { isHost, user } = await verifyRoomAccess(roomId);
+  if (!isHost) {
+    throw new Error("Only the host can transfer host powers.");
+  }
+  if (newHostUserId === user.id) {
+    throw new Error("You're already the host.");
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("rooms")
+    .update({ host_user_id: newHostUserId })
+    .eq("id", roomId)
+    .eq("host_user_id", user.id)
+    .select("id");
+
+  if (error) {
+    throw new Error("Couldn't transfer host — make sure they're still in the room.");
+  }
+  if (!data || data.length === 0) {
+    throw new Error("Couldn't transfer host. Try again.");
+  }
+
+  // No socket push: nothing in the app renders "who's host" live today
+  // (only the acting user's own isHost check gates the controls, and
+  // that's re-derived on the next render). refresh() updates the outgoing
+  // host's own view immediately, same as endRound/closeRoom; the new host
+  // sees their new powers whenever they next load or refresh the page.
+  refresh();
+}
+
 // Epic 07, Story 1/2/4 — post a chat message. No refresh() here: unlike
 // the host-only mutations above, the sender already has an open room
 // socket (components/chat.tsx) and gets their own message back the same

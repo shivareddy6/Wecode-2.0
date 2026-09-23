@@ -70,7 +70,7 @@ export default async function RoomPage({
   const { data: room } = await supabase
     .from("rooms")
     .select(
-      "status, current_problems, round_status, round_started_at, round_duration_seconds, round_preset",
+      "status, current_problems, round_status, round_started_at, round_duration_seconds, round_preset, host_user_id",
     )
     .eq("id", roomId)
     .single();
@@ -219,6 +219,7 @@ export default async function RoomPage({
         initialParticipants={participants}
         isHost={isHost}
         viewerId={authData.user.id}
+        hostUserId={room?.host_user_id ?? ""}
       />
 
       <div>
