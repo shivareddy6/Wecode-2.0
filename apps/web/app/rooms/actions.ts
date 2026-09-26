@@ -364,6 +364,53 @@ export async function transferHost(formData: FormData) {
   refresh();
 }
 
+// Epic 08, Story 4 — host revokes/regenerates the room's invite link so a
+// leaked link doesn't permanently compromise the room. A direct
+// rooms.invite_code update under RLS, same "no new RPC" shape as
+// endRound/closeRoom/removeParticipant/transferHost — the "hosts manage
+// their own rooms" policy's USING clause already restricts this to the
+// host, and the widened WITH CHECK (transfer_host migration) only
+// constrains host_user_id, which this update never touches, so it's
+// satisfied trivially.
+//
+// Invalidating the previous code needs no explicit "revoke" step: invite
+// links are looked up directly by invite_code (lookupRoomForJoin,
+// resolveRoomIdByCode), and invite_code is unique — the moment this write
+// lands, the old code simply matches no row anymore. Existing members are
+// completely unaffected (they're already room_participants rows, not
+// re-resolved through the code on every visit).
+//
+// redirect()s to the new code's URL, unlike endRound/closeRoom's
+// refresh() — the host is currently sitting on a URL keyed by the code
+// that's about to stop resolving, so staying put would leave them on a
+// dead link the instant this commits.
+export async function regenerateInviteLink(formData: FormData) {
+  const roomId = formData.get("roomId");
+
+  if (typeof roomId !== "string") {
+    throw new Error("Missing roomId.");
+  }
+
+  const { isHost } = await verifyRoomAccess(roomId);
+  if (!isHost) {
+    throw new Error("Only the host can regenerate the invite link.");
+  }
+
+  const newCode = generateInviteCode();
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("rooms")
+    .update({ invite_code: newCode })
+    .eq("id", roomId);
+
+  if (error) {
+    throw new Error("Couldn't regenerate the invite link. Try again.");
+  }
+
+  redirect(`/rooms/${newCode}`);
+}
+
 // Epic 07, Story 1/2/4 — post a chat message. No refresh() here: unlike
 // the host-only mutations above, the sender already has an open room
 // socket (components/chat.tsx) and gets their own message back the same

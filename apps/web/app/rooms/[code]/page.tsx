@@ -4,7 +4,7 @@ import { lookupRoomForJoin, resolveRoomIdByCode, verifyRoomAccess } from "@/lib/
 import { createClient } from "@/lib/supabase/server";
 import { ROUND_PRESETS } from "@/lib/problems/round-selection";
 import { computeRoundDeadline, isPastDeadline } from "@/lib/rounds/deadline";
-import { startRound, joinRoom, endRound, closeRoom } from "@/app/rooms/actions";
+import { startRound, joinRoom, endRound, closeRoom, regenerateInviteLink } from "@/app/rooms/actions";
 import { LeetCodeSyncForm } from "@/components/leetcode-sync-form";
 import { RoundCountdown } from "@/components/round-countdown";
 import { ParticipantList } from "@/components/participant-list";
@@ -209,6 +209,16 @@ export default async function RoomPage({
               className="rounded-full border border-black/10 px-4 py-1.5 text-sm font-medium self-start text-red-600 dark:border-white/15 dark:text-red-400"
             >
               Close room
+            </button>
+          </form>
+
+          <form action={regenerateInviteLink}>
+            <input type="hidden" name="roomId" value={roomId} />
+            <button
+              type="submit"
+              className="rounded-full border border-black/10 px-4 py-1.5 text-sm font-medium self-start dark:border-white/15"
+            >
+              Regenerate invite link
             </button>
           </form>
         </div>

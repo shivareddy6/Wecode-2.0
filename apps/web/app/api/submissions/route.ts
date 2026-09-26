@@ -13,6 +13,7 @@ import {
 } from "@/lib/leetcode/client";
 import { isSupportedLanguage, LEETCODE_LANG_SLUG } from "@/lib/leetcode/languages";
 import { computeRoundDeadline, isPastDeadline } from "@/lib/rounds/deadline";
+import { recordProxyFailure } from "@/lib/monitoring/proxy-failures";
 
 type CurrentProblem = { slug: string; title: string; difficulty: string };
 
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
     credentials = await getValidLeetCodeCredentials(user.id);
   } catch (error) {
     if (error instanceof LeetCodeUnavailableError) {
+      recordProxyFailure("verify-credentials", error.message);
       return NextResponse.json(
         { error: "Couldn't reach LeetCode to verify your session. Try again in a moment." },
         { status: 502 },
@@ -180,6 +182,14 @@ export async function POST(request: Request) {
         { status: 429 },
       );
     }
+
+    // Neither LeetCodeSessionExpiredError nor LeetCodeRateLimitError land
+    // here — both are expected, per-user conditions already surfaced above,
+    // not a sign the integration itself is broken. This branch is the
+    // generic/unexpected failure — the one Story 5 actually cares about
+    // (e.g. LeetCode changed their API).
+    const detail = error instanceof Error ? error.message : String(error);
+    recordProxyFailure("submit", detail);
 
     return NextResponse.json(
       { error: "Couldn't submit to LeetCode. Try again." },

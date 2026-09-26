@@ -5,6 +5,7 @@ import { getDecryptedLeetCodeCredentials } from "@/lib/leetcode/credentials";
 import { checkSubmissionStatus } from "@/lib/leetcode/client";
 import { toVerdict } from "@/lib/leetcode/verdict";
 import { broadcastToRoom } from "@/lib/realtime/broadcast";
+import { recordProxyFailure } from "@/lib/monitoring/proxy-failures";
 
 // Epic 03, Story 3 — the client polls this on an interval while a
 // submission is judging. `id` is our own submissions.id now (not
@@ -44,7 +45,9 @@ export async function GET(
   let status;
   try {
     status = await checkSubmissionStatus(submission.leetcode_submission_id, credentials);
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    recordProxyFailure("check-status", detail);
     return NextResponse.json(
       { error: "Couldn't check submission status. Try again." },
       { status: 502 },

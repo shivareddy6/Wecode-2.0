@@ -14,7 +14,9 @@
     "verify:close-room": "tsx scripts/verify-close-room.ts",
     "verify:chat": "tsx scripts/verify-chat.ts",
     "verify:transfer-host": "tsx scripts/verify-transfer-host.ts",
-    "verify:leaderboard-kicked-history": "tsx scripts/verify-leaderboard-kicked-history.ts"
+    "verify:leaderboard-kicked-history": "tsx scripts/verify-leaderboard-kicked-history.ts",
+    "verify:regenerate-invite-link": "tsx scripts/verify-regenerate-invite-link.ts",
+    "verify:failure-spike-alert": "tsx scripts/verify-failure-spike-alert.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
