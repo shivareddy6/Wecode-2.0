@@ -20,7 +20,7 @@ Status is tracked here at the epic level and inside each epic file at the story 
 | 02 | [Browser Extension](./epics/02-browser-extension.md) | Captures the LeetCode session, sideloadable, points at prod | Done |
 | 03 | [Solo Solve Experience](./epics/03-solo-solve-experience.md) | Real problem, real editor, real LeetCode-graded verdict | Done |
 | 04 | [Rooms](./epics/04-rooms.md) | Create/join/close a room, invite links, participants | Done — Stories 1–5, 7, 8 done; 6 out of scope |
-| 05 | [Sessions (Contests)](./epics/05-sessions-contests.md) | Timed multi-problem rounds inside a room, random problem selection | Partial — Stories 1–4, 6, 7 done; Story 5's leaderboard-lock AC waits on Epic 06 |
+| 05 | [Sessions (Contests)](./epics/05-sessions-contests.md) | Timed multi-problem rounds inside a room, random problem selection | Done — all 7 stories complete (Story 5's leaderboard-lock AC turned out already satisfied once Epic 06 landed) |
 | 06 | [Leaderboard & Scoring](./epics/06-leaderboard-scoring.md) | Time + penalty scoring, live updates, resets per session | Done — Stories 1–3, 5 (host competes by default, live socket push on every judged submission, per-session reset by construction, configurable constants) plus Story 4 (per-problem breakdown via `compute_leaderboard_breakdown()`, out-of-contest solves shown-but-zero-scored rather than hidden) |
 | 07 | [Chat](./epics/07-chat.md) | Real-time in-room text chat | Done — all 5 stories complete |
 | 08 | [Security & Abuse Prevention](./epics/08-security-abuse-prevention.md) | Encryption, rate limits, room/participant caps | Not started beyond the baseline already folded into 01/09/11 |
