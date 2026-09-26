@@ -26,7 +26,7 @@ Status is tracked here at the epic level and inside each epic file at the story 
 | 08 | [Security & Abuse Prevention](./epics/08-security-abuse-prevention.md) | Encryption, rate limits, room/participant caps | Partial — Stories 1, 4, 5 done; global rate limiting (Story 2) and per-host room caps (Story 3) explicitly descoped |
 | 09 | [Deployment & Ops](./epics/09-deployment-ops.md) | Vercel + Supabase, migrations, monitoring | Partial — Supabase project set up and in daily use; no Vercel deploy yet |
 | 10 | [Guest / Demo Mode](./epics/10-guest-demo-mode.md) | Zero-signup sandbox graded via a shared house LeetCode account | Not started |
-| 11 | [Realtime Server (Socket.io)](./epics/11-realtime-server.md) | Standalone socket.io service carrying chat + live leaderboard, deployed separately from the Next.js app | Partial — Stories 1–4, 6 done (`apps/socket-server`), verified via its own smoke test; Story 5 deferred; now called for real by Epic 06's leaderboard push, but still not deployed |
+| 11 | [Realtime Server (Socket.io)](./epics/11-realtime-server.md) | Standalone socket.io service carrying chat + live leaderboard, deployed separately from the Next.js app | Done — all 6 stories complete (`apps/socket-server`); still not deployed (Epic 09 Story 5) |
 
 ## Suggested build order
 

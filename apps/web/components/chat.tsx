@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { createClient } from "@/lib/supabase/client";
 import { sendMessage, deleteMessage } from "@/app/rooms/actions";
-import { MAX_MESSAGE_LENGTH } from "@/lib/chat/constants";
+import { MAX_MESSAGE_LENGTH, CHAT_HISTORY_LIMIT } from "@/lib/chat/constants";
 
 export type ChatMessageRow = {
   id: string;
@@ -39,10 +39,12 @@ export function Chat({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
+  const hasConnectedBefore = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     let socket: ReturnType<typeof io> | undefined;
+    hasConnectedBefore.current = false;
 
     async function connect() {
       const supabase = createClient();
@@ -54,8 +56,43 @@ export function Chat({
         auth: { token },
       });
 
+      // Epic 11, Story 5 — a reconnect re-fetches the current history
+      // directly (same query/limit as the room page's initial SSR fetch)
+      // instead of assuming no "chat:message"/"chat:delete" was missed
+      // while disconnected.
       socket.on("connect", () => {
         socket?.emit("room:join", { roomId });
+
+        if (hasConnectedBefore.current) {
+          void supabase
+            .from("chat_messages")
+            .select("id, user_id, body, created_at, kind, is_out_of_contest, users(display_name, avatar_url)")
+            .eq("room_id", roomId)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .limit(CHAT_HISTORY_LIMIT)
+            .then(({ data: rows }) => {
+              if (cancelled || !rows) return;
+              setMessages(
+                rows
+                  .map((row) => {
+                    const user = Array.isArray(row.users) ? row.users[0] : row.users;
+                    return {
+                      id: row.id,
+                      user_id: row.user_id,
+                      display_name: user?.display_name ?? null,
+                      avatar_url: user?.avatar_url ?? null,
+                      body: row.body,
+                      created_at: row.created_at,
+                      kind: row.kind as "user" | "submission",
+                      is_out_of_contest: row.is_out_of_contest,
+                    };
+                  })
+                  .reverse(),
+              );
+            });
+        }
+        hasConnectedBefore.current = true;
       });
 
       socket.on("chat:message", (message: ChatMessageRow) => {

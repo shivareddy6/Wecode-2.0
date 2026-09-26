@@ -16,7 +16,8 @@
     "verify:transfer-host": "tsx scripts/verify-transfer-host.ts",
     "verify:leaderboard-kicked-history": "tsx scripts/verify-leaderboard-kicked-history.ts",
     "verify:regenerate-invite-link": "tsx scripts/verify-regenerate-invite-link.ts",
-    "verify:failure-spike-alert": "tsx scripts/verify-failure-spike-alert.ts"
+    "verify:failure-spike-alert": "tsx scripts/verify-failure-spike-alert.ts",
+    "verify:reconnect-refetch": "tsx scripts/verify-reconnect-refetch.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

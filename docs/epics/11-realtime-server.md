@@ -4,7 +4,7 @@
 
 **Why it matters:** Chat (Epic 07) and the live leaderboard (Epic 06) both depend on this existing and being trustworthy — it's the one place both features' real-time delivery goes through.
 
-**Status:** Stories 1–4 and 6 built this session as `apps/socket-server`, a standalone npm workspace alongside `apps/web`. Verified end-to-end via `apps/socket-server/scripts/verify.ts` (no UI consumer exists yet — nothing in `apps/web` calls this service). Story 5 is deferred (see below). See `apps/socket-server/README.md` for what's there and how to run it.
+**Status:** All 6 stories done. Stories 1–4 and 6 were built as `apps/socket-server`, a standalone npm workspace alongside `apps/web`, verified end-to-end via `apps/socket-server/scripts/verify.ts`. Story 5 (client reconnection) was picked up for real 2026-09-25, once real consumers existed (`LiveLeaderboard`/`ParticipantList`/`Chat`). See `apps/socket-server/README.md` for what's there and how to run it.
 
 ---
 
@@ -46,14 +46,18 @@ As the system, I want a chat message or leaderboard score change to be persisted
 
 The mechanism is `POST /internal/broadcast {roomId, event, payload}`, gated on `REALTIME_INTERNAL_SECRET` so only `apps/web`'s own server can call it, never a browser. It's a pure "emit to the room's channel" call with no write of its own, so a broadcast failure can't touch the Postgres write that preceded it. Nothing calls it yet — Epic 06 Story 2 (leaderboard push) and Epic 07 (chat) are the intended callers.
 
-### Story 5 — Graceful reconnection (deferred)
+### Story 5 — Graceful reconnection ✅
 As a user, I want my client to reconnect automatically and recover current state if the socket server restarts or redeploys, so a deploy doesn't visibly break an in-progress session.
 
 - Acceptance criteria:
   - Client-side automatic reconnection (socket.io's built-in support) is enabled.
   - On reconnect, the client re-fetches current room/session state rather than assuming its last-known in-memory state is still accurate.
 
-Deliberately deferred: there's no real client yet to wire this into (no UI calls this service this session). Adopt socket.io-client's default reconnection plus a re-fetch-on-reconnect convention when the first real client (Epic 06 Story 2's leaderboard push) is built.
+**Status: Done**, picked up for real 2026-09-25 now that three real clients exist (`LiveLeaderboard`, `ParticipantList`, `Chat` — `apps/web/components/`). The first AC needed no code: socket.io-client's automatic reconnection is on by default and was already relied on implicitly (all three components already re-emit `room:join` on every `"connect"`, including reconnects, so a dropped socket doesn't just sit in no channel once it reconnects on its own).
+
+The second AC was the actual gap: a component that reconnects after missing a push (e.g. the socket server briefly restarting) had no way to recover — it would just sit on stale state until the next unrelated write happened to trigger a fresh broadcast. Fixed identically in all three: a `hasConnectedBefore` ref, reset at the start of each mount's effect, distinguishes the very first `"connect"` (already covered by the page's SSR'd initial props) from every subsequent one (a real reconnect) — only the latter triggers a direct re-fetch of current state via the browser Supabase client (`compute_leaderboard` for the leaderboard, a `room_participants` query for the roster, the same `chat_messages` query/limit as the room page's initial fetch for chat).
+
+Verified via `npm run verify:reconnect-refetch -w web` (3/3) — a script that can't literally mount the React components (no browser/login harness in this environment) but reimplements the identical connect-handler shape with a real `socket.io-client` against the real socket server: mutates Postgres directly without going through `broadcastToRoom` (simulating a push that gets missed entirely), forces a real abrupt disconnect via `engine.close()` (a clean `socket.disconnect()` call wouldn't auto-retry), and confirms the reconnect's refetch picks up the missed mutation. The underlying queries themselves were already proven correct by the existing `verify-participant-list`/`verify-chat`/`verify-leaderboard-push` scripts — this one specifically proves the *reconnect-vs-initial-connect* wiring recovers state a push-only model would have silently missed.
 
 ### Story 6 — Abuse protection on the socket server ✅
 As the system, I want basic rate limiting and connection caps on the socket server itself, so a publicly reachable, always-on WebSocket endpoint isn't an easy target for connection or message floods.

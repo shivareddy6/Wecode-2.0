@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import { createClient } from "@/lib/supabase/client";
@@ -31,10 +31,12 @@ export function LiveLeaderboard({
 }) {
   const [rows, setRows] = useState(initialRows);
   const router = useRouter();
+  const hasConnectedBefore = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     let socket: ReturnType<typeof io> | undefined;
+    hasConnectedBefore.current = false;
 
     async function connect() {
       const supabase = createClient();
@@ -49,8 +51,25 @@ export function LiveLeaderboard({
       // Re-joins on every "connect" (including socket.io's own
       // auto-reconnects), not just once — a dropped/reconnected socket
       // otherwise sits in no channel and silently stops receiving pushes.
+      //
+      // Epic 11, Story 5 — a reconnect (not the initial connect, which the
+      // SSR'd initialRows already cover) also re-fetches the current
+      // standings directly, rather than trusting that no push was missed
+      // while disconnected: compute_leaderboard() only gets called again
+      // by the app when a submission is judged, so a client that was
+      // offline for a while would otherwise sit on stale rows until the
+      // next unrelated verdict lands.
       socket.on("connect", () => {
         socket?.emit("room:join", { roomId });
+
+        if (hasConnectedBefore.current) {
+          void supabase
+            .rpc("compute_leaderboard", { p_room_id: roomId })
+            .then(({ data: freshRows }) => {
+              if (!cancelled && freshRows) setRows(freshRows as LeaderboardRow[]);
+            });
+        }
+        hasConnectedBefore.current = true;
       });
 
       socket.on("leaderboard:update", (updatedRows: LeaderboardRow[]) => {

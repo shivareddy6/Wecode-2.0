@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { createClient } from "@/lib/supabase/client";
 import { removeParticipant, transferHost } from "@/app/rooms/actions";
@@ -29,10 +29,12 @@ export function ParticipantList({
   hostUserId: string;
 }) {
   const [participants, setParticipants] = useState(initialParticipants);
+  const hasConnectedBefore = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     let socket: ReturnType<typeof io> | undefined;
+    hasConnectedBefore.current = false;
 
     async function connect() {
       const supabase = createClient();
@@ -44,8 +46,30 @@ export function ParticipantList({
         auth: { token },
       });
 
+      // Epic 11, Story 5 — a reconnect re-fetches the current roster
+      // directly instead of assuming no "participants:update" was missed
+      // while disconnected (the initial connect is already covered by the
+      // SSR'd initialParticipants).
       socket.on("connect", () => {
         socket?.emit("room:join", { roomId });
+
+        if (hasConnectedBefore.current) {
+          void supabase
+            .from("room_participants")
+            .select("user_id, users(display_name)")
+            .eq("room_id", roomId)
+            .is("removed_at", null)
+            .then(({ data: rows }) => {
+              if (cancelled || !rows) return;
+              setParticipants(
+                rows.map((row) => {
+                  const user = Array.isArray(row.users) ? row.users[0] : row.users;
+                  return { user_id: row.user_id, display_name: user?.display_name ?? null };
+                }),
+              );
+            });
+        }
+        hasConnectedBefore.current = true;
       });
 
       socket.on("participants:update", (rows: ParticipantRow[]) => {

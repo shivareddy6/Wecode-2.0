@@ -9,6 +9,7 @@ import { LeetCodeSyncForm } from "@/components/leetcode-sync-form";
 import { RoundCountdown } from "@/components/round-countdown";
 import { ParticipantList } from "@/components/participant-list";
 import { Chat } from "@/components/chat";
+import { CHAT_HISTORY_LIMIT } from "@/lib/chat/constants";
 
 type CurrentProblem = { slug: string; title: string; difficulty: "easy" | "medium" | "hard" };
 
@@ -98,7 +99,6 @@ export default async function RoomPage({
   // rows (Story 3) are excluded here the same way a removed participant is
   // excluded from the roster above. Capped at the most recent 100 — this is
   // a casual friends tool, not a paginated archive.
-  const CHAT_HISTORY_LIMIT = 100;
   const { data: chatRows } = await supabase
     .from("chat_messages")
     .select("id, user_id, body, created_at, kind, is_out_of_contest, users(display_name, avatar_url)")
