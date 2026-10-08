@@ -84,14 +84,14 @@ export function RoundCountdown({
   // Briefly shown again right after mount too, until the first tick above
   // fires (up to ~1s) — a trivial cosmetic gap, not a correctness issue.
   if (!hasMounted || now === null) {
-    return <p className="text-sm font-medium text-zinc-400">…</p>;
+    return <p className="text-sm font-medium text-muted">…</p>;
   }
 
   const remainingMs = deadline - now;
   const isOver = roundStatus !== "active" || remainingMs <= 0;
 
   if (isOver) {
-    return <p className="text-sm font-medium text-red-600 dark:text-red-400">Round ended</p>;
+    return <p className="text-sm font-medium text-danger">Round ended</p>;
   }
 
   const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));

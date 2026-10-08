@@ -73,12 +73,30 @@ export async function GET(
     problem.codeSnippets.map((snippet) => [snippet.langSlug, snippet.code]),
   );
 
+  // metaData's params list is what lets the Test Result/Submission panels
+  // label each line of a case's raw testcase input ("coins =", "amount =",
+  // ...) instead of showing an unlabeled blob — same param order LeetCode
+  // itself uses to lay exampleTestcases/dataInput out line-by-line, so a
+  // case's Nth line always belongs to paramNames[N % paramNames.length].
+  // Falls back to an empty list (no labels shown) rather than failing the
+  // whole problem load if LeetCode's metaData ever doesn't parse as JSON.
+  let paramNames: string[] = [];
+  try {
+    const meta = JSON.parse(problem.metaData);
+    if (Array.isArray(meta?.params)) {
+      paramNames = meta.params.map((param: { name?: string }, index: number) => param?.name ?? `arg${index + 1}`);
+    }
+  } catch {
+    paramNames = [];
+  }
+
   return NextResponse.json({
     questionId: problem.questionId,
     title: problem.title,
     difficulty: problem.difficulty,
     content: problem.content,
     exampleTestcases: problem.exampleTestcases,
+    paramNames,
     languages: SUPPORTED_LANGUAGES.map((language) => ({
       language,
       starterCode: snippetsByLangSlug.get(LEETCODE_LANG_SLUG[language]) ?? null,

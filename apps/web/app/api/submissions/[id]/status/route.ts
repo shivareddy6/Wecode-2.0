@@ -91,10 +91,13 @@ export async function GET(
       submission.problem_slug;
 
     const submitter = await getCurrentUser();
-    const activityBody =
-      status.statusMessage === "Accepted"
-        ? `${submitter.displayName ?? "Someone"} solved ${problemTitle} (${submission.difficulty})`
-        : `${submitter.displayName ?? "Someone"} attempted ${problemTitle} — ${status.statusMessage}`;
+    const isSolved = status.statusMessage === "Accepted";
+    // body stays a plain-text fallback (e.g. for a future export/notification
+    // surface) — components/chat.tsx renders the card off the structured
+    // columns below, never by parsing this string.
+    const activityBody = isSolved
+      ? `${submitter.displayName ?? "Someone"} solved ${problemTitle} (${submission.difficulty})`
+      : `${submitter.displayName ?? "Someone"} attempted ${problemTitle} — ${status.statusMessage}`;
 
     const { data: chatMessage, error: chatError } = await supabase
       .from("chat_messages")
@@ -104,8 +107,11 @@ export async function GET(
         body: activityBody,
         kind: "submission",
         is_out_of_contest: submission.is_out_of_contest,
+        problem_title: problemTitle,
+        problem_difficulty: submission.difficulty,
+        is_solved: isSolved,
       })
-      .select("id, room_id, user_id, body, created_at, kind, is_out_of_contest")
+      .select("id, room_id, user_id, body, created_at, kind, is_out_of_contest, problem_title, problem_difficulty, is_solved")
       .single();
 
     if (!chatError && chatMessage) {
@@ -117,7 +123,11 @@ export async function GET(
         created_at: chatMessage.created_at,
         kind: chatMessage.kind,
         is_out_of_contest: chatMessage.is_out_of_contest,
+        problem_title: chatMessage.problem_title,
+        problem_difficulty: chatMessage.problem_difficulty,
+        is_solved: chatMessage.is_solved,
         display_name: submitter.displayName,
+        leetcode_username: submitter.leetcodeUsername,
         avatar_url: submitter.avatarUrl,
       });
     }

@@ -31,6 +31,7 @@ const WHOAMI_QUERY = `
     userStatus {
       userId
       username
+      realName
       avatar
       isSignedIn
     }
@@ -40,6 +41,7 @@ const WHOAMI_QUERY = `
 export type LeetCodeIdentity = {
   userId: string;
   username: string;
+  realName: string | null;
   avatar: string | null;
 };
 
@@ -74,6 +76,10 @@ export async function fetchLeetCodeIdentity(
   return {
     userId: String(status.userId),
     username: status.username,
+    // LeetCode returns "" rather than null for an account with no real
+    // name set, not just the field being absent — normalize both to null
+    // so callers get one clean "not set" signal.
+    realName: status.realName || null,
     avatar: status.avatar ?? null,
   };
 }
@@ -87,6 +93,7 @@ const GET_PROBLEM_QUERY = `
       content
       difficulty
       exampleTestcases
+      metaData
       codeSnippets {
         lang
         langSlug
@@ -103,6 +110,11 @@ export type LeetCodeProblem = {
   content: string;
   difficulty: "Easy" | "Medium" | "Hard";
   exampleTestcases: string;
+  // A JSON string — {"name": "coinChange", "params": [{"name": "coins", ...}, ...], "return": {...}}
+  // — parsed by the caller (app/api/rooms/[roomId]/problems/[slug]/route.ts)
+  // into just the param names the Test Result/Submission panels need to
+  // label each line of a test case's raw input.
+  metaData: string;
   codeSnippets: { lang: string; langSlug: string; code: string }[];
 };
 
@@ -293,6 +305,12 @@ export type LeetCodeInterpretStatus = {
   codeAnswer?: string[];
   expectedCodeAnswer?: string[];
   compareResult?: string;
+  // NOT one entry per test case — LeetCode runs a Run's cases in one
+  // process, so stdout comes back as a single combined stream across all
+  // of them (same code_output field checkSubmissionStatus reads, joined
+  // the same way there). Indexing into it per case silently drops every
+  // print but one; join the whole thing instead.
+  codeOutput?: string;
 };
 
 // Same check/ endpoint as a real submission — LeetCode uses one generic
@@ -328,5 +346,6 @@ export async function checkInterpretStatus(
     codeAnswer: data.code_answer,
     expectedCodeAnswer: data.expected_code_answer,
     compareResult: data.compare_result,
+    codeOutput: Array.isArray(data.code_output) ? data.code_output.join("\n") : data.code_output,
   };
 }

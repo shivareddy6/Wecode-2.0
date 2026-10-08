@@ -60,9 +60,9 @@ export function LeetCodeSyncForm() {
           autoComplete="off"
           spellCheck={false}
           required
-          className="rounded-md border border-black/[.1] bg-transparent px-3 py-2 font-mono text-sm dark:border-white/[.15]"
+          className="rounded-md border border-border bg-panel px-3 py-2 font-mono text-sm"
         />
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-muted">
           On leetcode.com, open DevTools → Application/Storage → Cookies →
           leetcode.com, and copy the value of the{" "}
           <code className="font-mono">LEETCODE_SESSION</code> cookie.
@@ -80,22 +80,20 @@ export function LeetCodeSyncForm() {
           autoComplete="off"
           spellCheck={false}
           required
-          className="rounded-md border border-black/[.1] bg-transparent px-3 py-2 font-mono text-sm dark:border-white/[.15]"
+          className="rounded-md border border-border bg-panel px-3 py-2 font-mono text-sm"
         />
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-muted">
           Same place, the <code className="font-mono">csrftoken</code>{" "}
           cookie.
         </p>
       </div>
 
-      {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      ) : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       <button
         type="submit"
         disabled={status === "submitting"}
-        className="flex h-11 items-center justify-center rounded-full bg-foreground px-5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-60 dark:hover:bg-[#ccc]"
+        className="flex h-11 items-center justify-center rounded-full bg-accent px-5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-60"
       >
         {status === "submitting" ? "Syncing…" : "Sync"}
       </button>

@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { resolveRoomIdByCode, verifyRoomAccess } from "@/lib/dal";
+import { resolveRoomIdByCode, verifyRoomAccess, getCurrentUser } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
-import { LiveLeaderboard, type LeaderboardRow } from "@/components/live-leaderboard";
-import { ProblemBreakdown, type BreakdownRow } from "@/components/problem-breakdown";
+import { ContestLeaderboard, type LeaderboardRow, type BreakdownRow, type LeaderboardProblem } from "@/components/contest-leaderboard";
+import { ProfileMenu } from "@/components/solve/profile-menu";
+import { sortByDifficulty } from "@/lib/problems/difficulty-order";
 
 // Epic 06, Story 1/2 — server-renders the current standings for the
 // room's *current* round (compute_leaderboard() is room-scoped, not
@@ -21,8 +22,17 @@ export default async function LeaderboardPage({
   const { code } = await params;
   const roomId = await resolveRoomIdByCode(code);
   await verifyRoomAccess(roomId);
+  const viewer = await getCurrentUser();
 
   const supabase = await createClient();
+
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("current_problems")
+    .eq("id", roomId)
+    .single();
+  const problems = sortByDifficulty((room?.current_problems ?? []) as LeaderboardProblem[]);
+
   const { data, error } = await supabase.rpc("compute_leaderboard", {
     p_room_id: roomId,
   });
@@ -48,29 +58,26 @@ export default async function LeaderboardPage({
   }
 
   const breakdownRows = (breakdownData ?? []) as BreakdownRow[];
-  const displayNames = Object.fromEntries(
-    rows.map((row) => [row.user_id, row.display_name]),
-  );
 
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-10 p-8">
-      <div>
-        <h1 className="text-xl font-semibold">Leaderboard</h1>
-        <p className="text-sm text-zinc-500">
-          <Link href={`/rooms/${code}`} className="underline">
-            Back to room
-          </Link>{" "}
-          · Invite code: <code className="font-mono">{code}</code>
-        </p>
+    <div className="flex min-h-screen flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-panel px-4 py-2">
+        <div className="flex items-center gap-3 text-sm">
+          <Link href={`/rooms/${code}`} className="text-muted hover:text-foreground">
+            ← Room
+          </Link>
+          <span className="text-muted">·</span>
+          <code className="font-mono text-muted">{code}</code>
+        </div>
+        <ProfileMenu displayName={viewer.displayName} leetcodeUsername={viewer.leetcodeUsername} avatarUrl={viewer.avatarUrl} />
       </div>
 
-      <LiveLeaderboard roomId={roomId} initialRows={rows} />
-
-      <ProblemBreakdown
-        rows={breakdownRows}
-        participantOrder={rows.map((row) => row.user_id)}
-        displayNames={displayNames}
-      />
-    </main>
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6">
+        <h1 className="text-xl font-semibold">Leaderboard</h1>
+        <div className="overflow-x-auto rounded-lg border border-border bg-panel p-5">
+          <ContestLeaderboard roomId={roomId} problems={problems} initialRows={rows} initialBreakdownRows={breakdownRows} />
+        </div>
+      </main>
+    </div>
   );
 }

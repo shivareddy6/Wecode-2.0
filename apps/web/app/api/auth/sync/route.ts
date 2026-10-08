@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       .from("users")
       .update({
         leetcode_username: identity.username,
-        display_name: identity.username,
+        display_name: identity.realName ?? identity.username,
         avatar_url: identity.avatar,
       })
       .eq("id", userId);
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
       id: userId,
       leetcode_id: identity.userId,
       leetcode_username: identity.username,
-      display_name: identity.username,
+      display_name: identity.realName ?? identity.username,
       avatar_url: identity.avatar,
     });
 

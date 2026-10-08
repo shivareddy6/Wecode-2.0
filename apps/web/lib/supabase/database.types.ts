@@ -24,7 +24,10 @@ export type Database = {
           deleted_at: string | null
           id: string
           is_out_of_contest: boolean
+          is_solved: boolean | null
           kind: string
+          problem_difficulty: string | null
+          problem_title: string | null
           room_id: string
           user_id: string
         }
@@ -34,7 +37,10 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           is_out_of_contest?: boolean
+          is_solved?: boolean | null
           kind?: string
+          problem_difficulty?: string | null
+          problem_title?: string | null
           room_id: string
           user_id: string
         }
@@ -44,7 +50,10 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           is_out_of_contest?: boolean
+          is_solved?: boolean | null
           kind?: string
+          problem_difficulty?: string | null
+          problem_title?: string | null
           room_id?: string
           user_id?: string
         }
@@ -311,6 +320,7 @@ export type Database = {
           last_accepted_at: string
           problems_solved: number
           total_score: number
+          total_time_minutes: number
           user_id: string
         }[]
       }
@@ -322,9 +332,11 @@ export type Database = {
           is_removed: boolean
           problem_score: number
           problem_slug: string
+          problem_time_minutes: number
           problem_title: string
           status: string
           user_id: string
+          wrong_before: number
         }[]
       }
       create_room: {

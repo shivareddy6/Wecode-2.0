@@ -9,7 +9,12 @@ import { isRoundPreset, selectRoundProblems } from "@/lib/problems/round-selecti
 import { broadcastToRoom, disconnectUserFromRoom } from "@/lib/realtime/broadcast";
 import { MAX_MESSAGE_LENGTH } from "@/lib/chat/constants";
 
-type ParticipantRow = { user_id: string; display_name: string | null };
+type ParticipantRow = {
+  user_id: string;
+  display_name: string | null;
+  leetcode_username: string;
+  avatar_url: string | null;
+};
 
 // Epic 04, Story 3 — recomputes the active roster and pushes it over
 // Epic 11's socket channel, the same "write, then broadcast on the same
@@ -21,13 +26,18 @@ async function broadcastParticipantList(roomId: string): Promise<void> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("room_participants")
-    .select("user_id, users(display_name)")
+    .select("user_id, users(display_name, leetcode_username, avatar_url)")
     .eq("room_id", roomId)
     .is("removed_at", null);
 
   const rows: ParticipantRow[] = (data ?? []).map((row) => {
     const user = Array.isArray(row.users) ? row.users[0] : row.users;
-    return { user_id: row.user_id, display_name: user?.display_name ?? null };
+    return {
+      user_id: row.user_id,
+      display_name: user?.display_name ?? null,
+      leetcode_username: user?.leetcode_username ?? "",
+      avatar_url: user?.avatar_url ?? null,
+    };
   });
 
   await broadcastToRoom(roomId, "participants:update", rows);
@@ -446,7 +456,7 @@ export async function sendMessage(formData: FormData) {
   const { data: message, error } = await supabase
     .from("chat_messages")
     .insert({ room_id: roomId, user_id: user.id, body })
-    .select("id, room_id, user_id, body, created_at, kind, is_out_of_contest, users(display_name, avatar_url)")
+    .select("id, room_id, user_id, body, created_at, kind, is_out_of_contest, users(display_name, leetcode_username, avatar_url)")
     .single();
 
   if (error || !message) {
@@ -463,7 +473,11 @@ export async function sendMessage(formData: FormData) {
     created_at: message.created_at,
     kind: message.kind,
     is_out_of_contest: message.is_out_of_contest,
+    problem_title: null,
+    problem_difficulty: null,
+    is_solved: null,
     display_name: sender?.display_name ?? null,
+    leetcode_username: sender?.leetcode_username ?? "",
     avatar_url: sender?.avatar_url ?? null,
   });
 }
