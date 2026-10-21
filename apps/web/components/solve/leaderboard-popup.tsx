@@ -32,7 +32,6 @@ export function LeaderboardPopup({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setState({ kind: "loading" });
 
     async function load() {
       const supabase = createClient();
@@ -57,6 +56,9 @@ export function LeaderboardPopup({
     void load();
     return () => {
       cancelled = true;
+      // Reset on close/change so the next open shows "Loading…" instead of
+      // stale rows while the refetch is in flight.
+      setState({ kind: "loading" });
     };
   }, [open, roomId]);
 

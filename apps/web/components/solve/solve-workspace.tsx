@@ -57,7 +57,9 @@ export function SolveWorkspace({
   // popup gets the same array below so its Q1/Q2/... columns line up with
   // these tabs by construction, not by coincidence of two sort call sites.
   const [activeSlug, setActiveSlug] = useState(initialSlug);
-  const [loadStates, setLoadStates] = useState<Record<string, ProblemLoadState>>({});
+  const [loadStates, setLoadStates] = useState<Record<string, ProblemLoadState>>({
+    [initialSlug]: { kind: "loading" },
+  });
   const [statuses, setStatuses] = useState<Record<string, ProblemStatus>>({});
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -78,6 +80,10 @@ export function SolveWorkspace({
       return { ...prev, [slug]: { kind: "loading" } };
     });
 
+    fetchProblem(slug);
+  }
+
+  function fetchProblem(slug: string) {
     fetch(`/api/rooms/${roomId}/problems/${slug}`)
       .then(async (response) => {
         const data = await response.json();
@@ -99,7 +105,7 @@ export function SolveWorkspace({
   }
 
   useEffect(() => {
-    loadProblem(initialSlug);
+    fetchProblem(initialSlug);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

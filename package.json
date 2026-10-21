@@ -3,8 +3,11 @@
   "private": true,
   "workspaces": ["apps/*"],
   "scripts": {
+    "dev": "npm run dev:web & npm run dev:socket",
     "dev:web": "npm run dev -w web",
+    "dev:socket": "npm run dev -w socket-server",
     "build:web": "npm run build -w web",
+    "build:socket": "npm run build -w socket-server",
     "lint:web": "npm run lint -w web",
     "build:extension": "node extension/build.js --env=dev",
     "build:extension:prod": "node extension/build.js --env=prod"
